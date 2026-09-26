@@ -2,12 +2,12 @@
   "factory": {
     "name": "دار العلف",
     "nameLatin": "Dar Al-Alef",
-    "address": "المنطقة الصناعية رقم 31 تيرني منصورة ولاية تلمسان",
-    "phone": "0657969652",
-    "commercialReg": "13/00-0264493B13",
-    "taxId": "001313026449327",
-    "artImp": "13230898040",
-    "bank": "CPA"
+    "address": "",
+    "phone": "",
+    "commercialReg": "",
+    "taxId": "",
+    "artImp": "",
+    "bank": ""
   },
   "finance": {
     "currency": "دج",
@@ -62,16 +62,22 @@
     "pending": true,
     "debts": true
   },
+  "tracking": {
+    "defaultIdleDays": 7,
+    "vExcellent": 80,
+    "vStable": 60,
+    "vWarn": 40
+  },
   "cards": {},
   "costing": {
-    "overhead": 0,
+    "overhead": 5,
     "bags": {
       "on": true,
-      "amount": 53
+      "amount": 0
     },
     "transport": {
       "on": true,
-      "amount": 350
+      "amount": 0
     },
     "other": {
       "on": true,
@@ -168,11 +174,5 @@
       "critical": "#dc2626"
     }
   },
-  "changelog": [],
-  "tracking": {
-    "defaultIdleDays": 7,
-    "vExcellent": 80,
-    "vStable": 60,
-    "vWarn": 40
-  }
+  "changelog": []
 }

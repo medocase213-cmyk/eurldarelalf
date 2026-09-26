@@ -113,7 +113,14 @@ function serveStatic(req, res, p) {
 const numId = (p, base) => Number(String(p).slice(String(base).length).split('/')[0]);
 
 // فحص طلبات التعديل: Origin مرفوض من الخارج + Content-Type يجب أن يكون JSON
-function guardMutation(req) {
+// تُستثنى الواجهة العمومية (/api/public/) من فحص Origin (زوار بلا حساب) — تبقى الحماية بالمعدل والتحقق
+function guardMutation(req, p) {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return;
+  if (p && p.startsWith('/api/public/')) {
+    const ct0 = String((req.headers && req.headers['content-type']) || '').split(';')[0].trim().toLowerCase();
+    if (ct0 !== 'application/json') throw Object.assign(new Error('Content-Type يجب أن يكون application/json'), { code: 415 });
+    return;
+  }
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return;
   const o = String((req.headers && req.headers.origin) || '');
   if (o && !ALLOWED_ORIGINS.has(o)) {
@@ -132,7 +139,7 @@ function needPerm(ctx, sec, act) {
   if (!Auth.can(ctx.role, sec, act)) throw Object.assign(new Error('غير مصرح لك بهذا الإجراء'), { code: 403 });
 }
 const W = (re, sec, act) => ({ re, sec, act });
-const NO_PERM = ['/api/health', '/api/login', '/api/logout', '/api/system/public'];
+const NO_PERM = ['/api/health', '/api/login', '/api/logout', '/api/system/public', '/api/public/catalog', '/api/public/orders', '/api/public/orders/track'];
 const AUTH_ONLY = ['/api/auth/password', '/api/auth/permissions', '/api/dashboard', '/api/notifications'];
 const READ_PERM = [
   ['/api/master/', 'master', 'view'],
@@ -181,7 +188,8 @@ const WRITE_PERM = [
   W(/^\/api\/sales\/receipts(\/|$)/, 'sales', 'receipt'),
   W(/^\/api\/sales\/standalone-receipts(\/|$)/, 'sales', 'receipt'),
   W(/^\/api\/sales\/returns(\/|$)/, 'sales', 'return'),
-  W(/^\/api\/sales\/cmd-orders(\/|$)/, 'sales', 'invoice'),
+   W(/^\/api\/sales\/cmd-orders(\/|$)/, 'sales', 'invoice'),
+   W(/^\/api\/sales\/ext-orders(\/|$)/, 'sales', 'invoice'),
   W(/^\/api\/billing\/receipts\/\d+\/receive/, 'sales', 'receipt'),
   W(/^\/api\/billing\/receipts\/\d+\/archive/, 'sales', 'receipt'),
   W(/^\/api\/billing\/invoices(\/|$)/, 'sales', 'invoice'),
@@ -282,6 +290,18 @@ function loginRateAllow(ip) {
   if (LOGIN_RATE.hits.size > 2000) LOGIN_RATE.hits.delete(LOGIN_RATE.hits.keys().next().value);
   return true;
 }
+// حد الطلبات الخارجية: 10 طلبات/ساعة لكل IP (ذاكرة العملية فقط)
+const EXT_RATE = { windowMs: 3600000, max: 10, hits: new Map() };
+function extRateAllow(ip) {
+  const nowMs = Date.now();
+  let arr = EXT_RATE.hits.get(ip) || [];
+  arr = arr.filter(t => nowMs - t < EXT_RATE.windowMs);
+  if (arr.length >= EXT_RATE.max) { EXT_RATE.hits.set(ip, arr); return false; }
+  arr.push(nowMs);
+  EXT_RATE.hits.set(ip, arr);
+  if (EXT_RATE.hits.size > 2000) EXT_RATE.hits.delete(EXT_RATE.hits.keys().next().value);
+  return true;
+}
 
 const server = http.createServer(async (req, res) => {
   res.__origin = String((req.headers && req.headers.origin) || '');
@@ -297,7 +317,7 @@ const server = http.createServer(async (req, res) => {
   let __unlock = null;
   try {
     if (req.method !== 'GET' && p.startsWith('/api/')) __unlock = await lockWrite();
-    guardMutation(req);
+    guardMutation(req, p);
     checkRoutePerm(p, req.method, ctx0);
     if (p === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, project: 'dar-alef-v2', version: '2.2-p4', uptime: Math.round(process.uptime()), time: new Date().toISOString() });
 
@@ -530,6 +550,26 @@ Master.deleteJob(numId(p, '/api/master/jobs/'), ctx));
     if (p === '/api/sales/returns' && req.method === 'POST') return send(res, 200, Sales.addReturn(await body(req), ctx));
 
     // ---- طلبيات الزبائن: مسودة ← موثقة ← محولة لفاتورة (بلا أثر مخزني/مالي) ----
+    // ---- الواجهة العمومية (بلا دخول): كتالوج + طلب خارجي + تتبع ----
+    if (p === '/api/public/catalog' && req.method === 'GET') return send(res, 200, Sales.publicCatalog());
+    if (p === '/api/public/orders/track' && req.method === 'GET') {
+      try { return send(res, 200, Sales.trackOrder(url.searchParams.get('phone'), url.searchParams.get('num'))); }
+      catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
+    }
+    if (p === '/api/public/orders' && req.method === 'POST') {
+      const lip = String((req.socket && req.socket.remoteAddress) || 'unknown');
+      if (!extRateAllow(lip)) return send(res, 429, { error: 'طلبات كثيرة من عنوانك — حاول بعد ساعة' });
+      try {
+        const ip = (req.socket && req.socket.remoteAddress) || '';
+        return send(res, 200, Sales.publicOrder(await body(req), ip));
+      } catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
+    }
+    // ---- الطلبات الخارجية (إدارة داخلية بصلاحيات المبيعات) ----
+    if (p === '/api/sales/ext-orders' && req.method === 'GET') return send(res, 200, Sales.listExtOrders(getCtx(req)));
+    if (p.startsWith('/api/sales/ext-orders/') && p.endsWith('/decide') && req.method === 'POST') {
+      try { return send(res, 200, Sales.decideExtOrder(numId(p, '/api/sales/ext-orders/'), await body(req), getCtx(req))); }
+      catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
+    }
     if (p === '/api/sales/cmd-orders' && req.method === 'GET') return send(res, 200, Sales.listCmdOrders());
     if (p === '/api/sales/cmd-orders' && req.method === 'POST') return send(res, 200, Sales.addCmdOrder(await body(req), ctx));
     if (p.startsWith('/api/sales/cmd-orders/') && p.endsWith('/document') && req.method === 'POST') return send(res, 200, Sales.documentCmdOrder(numId(p, '/api/sales/cmd-orders/'), ctx));

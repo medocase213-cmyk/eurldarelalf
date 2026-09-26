@@ -453,6 +453,157 @@ const Sales = {
     return { data: { order: this._cmdView(o2), invoice: inv } };
   },
 
+  // ---- الطلبات الخارجية (واجهة الزوار — بلا دخول، بلا أي أثر مخزني/مالي) ----
+  // السعر من الخادم دائماً (سعر العميل تجاهلي) — الكتالوج: منتج تام برصيد + آخر سعر بيع
+  _extSeq(d) {
+    d.seq = d.seq || {};
+    if (!Number.isInteger(d.seq.extorder) || d.seq.extorder < 1) d.seq.extorder = 1;
+    if (!Number.isInteger(d.seq.extorder_num) || d.seq.extorder_num < 1) d.seq.extorder_num = 1;
+    if (!Array.isArray(d.extorders)) d.extorders = [];
+    return d;
+  },
+  _lastSalePrice(item_id) {
+    try {
+      const d = db.load();
+      const invs = (d.invoices || []).filter(o => o.status === 'مؤكدة');
+      for (let i = invs.length - 1; i >= 0; i--) {
+        const l = (invs[i].lines || []).find(x => Number(x.item_id) === Number(item_id));
+        if (l) return r2(Number(l.price || 0));
+      }
+    } catch {}
+    return 0;
+  },
+  publicCatalog() {
+    const md = mdata();
+    const finIds = new Set((md.items || []).filter(it => {
+      const c = (md.categories || []).find(x => x.id === Number(it.category_id));
+      return c && c.main === 'منتج نهائي' && it.status !== 'متوقفة';
+    }).map(it => it.id));
+    let avail = {};
+    try {
+      for (const a of this.availability().data) avail[Number(a.item_id)] = a;
+    } catch {}
+    const out = [];
+    for (const id of finIds) {
+      const a = avail[id];
+      if (!a || !(Number(a.remaining || 0) > 0)) continue;
+      const it = (md.items || []).find(x => x.id === id) || {};
+      out.push({
+        item_id: id, item_name: a.item_name, unit: a.unit || it.unit || 'قنطار',
+        remaining: Number(a.remaining || 0), price: this._lastSalePrice(id)
+      });
+    }
+    return { data: out.sort((x, y) => String(x.item_name) < String(y.item_name) ? -1 : 1) };
+  },
+  _checkGuestPhone(ph) {
+    const s = String(ph || '').replace(/[\s-]/g, '');
+    if (!/^0(5|6|7)\d{8}$/.test(s)) err('رقم الهاتف: 10 أرقام جزائرية تبدأ بـ 05/06/07');
+    return s;
+  },
+  publicOrder(b, ip) {
+    const md = mdata();
+    const name = String((b && b.name) || '').trim().slice(0, 60);
+    if (name.length < 3) err('الاسم الكامل مطلوب (3 أحرف على الأقل)');
+    const phone = this._checkGuestPhone(b && b.phone);
+    const address = String((b && b.address) || '').trim().slice(0, 120);
+    if (address.length < 3) err('العنوان/البلدية مطلوب');
+    if (!Array.isArray(b.items) || !b.items.length) err('اختر منتجاً واحداً على الأقل');
+    if (b.items.length > 10) err('عشرة منتجات كحد أقصى في الطلب الواحد');
+    const cat = {};
+    try {
+      for (const p of this.publicCatalog().data) cat[Number(p.item_id)] = p;
+    } catch {}
+    const seen = {};
+    const lines = [];
+    for (const ln of b.items) {
+      const p = cat[Number(ln && ln.item_id)];
+      if (!p) err('منتج غير متوفر حالياً');
+      if (seen[p.item_id]) err('المنتج مكرر: ' + p.item_name);
+      seen[p.item_id] = 1;
+      const qty = toNum(ln.qty, 'كمية ' + p.item_name);
+      if (!(qty > 0)) err('كمية ' + p.item_name + ' أكبر من صفر');
+      if (qty > 500) err('كمية ' + p.item_name + ' تتجاوز 500 — للكميات الكبيرة اتصل بالمصنع');
+      if (qty > Number(p.remaining || 0) + 1e-9) err('الكمية المطلوبة من ' + p.item_name + ' تفوق المتاح (' + p.remaining + ')');
+      lines.push({ item_id: p.item_id, item_name: p.item_name, unit: p.unit, qty: r2(qty), price: r2(Number(p.price || 0)), total: r2(qty * Number(p.price || 0)) });
+    }
+    const d = this._extSeq(db.load());
+    // منع الإغراق: طلب واحد قيد الانتظار لنفس الرقم (طلب جديد بعد معالجة القديم)
+    const pending = (d.extorders || []).some(x => x.phone === phone && (x.status === 'جديدة' || x.status === 'مؤجلة'));
+    if (pending) err('لديك طلب قيد المعالجة بهذا الرقم — انتظر اتصالنا قبل طلب جديد');
+    const date = now().slice(0, 10);
+    const row = {
+      id: d.seq.extorder++, num: 'EXT-' + date.slice(0, 4) + '-' + String(d.seq.extorder_num++).padStart(3, '0'),
+      name, phone, address, note: String((b && b.note) || '').trim().slice(0, 200),
+      date, lines, total: r2(lines.reduce((s, l) => s + l.total, 0)),
+      status: 'جديدة', remind_date: '', cancel_reason: '', cmd_num: '',
+      ip: String(ip || '').slice(0, 45), created_at: now(), updated_at: now()
+    };
+    d.extorders.push(row);
+    db.save(d);
+    return { data: { num: row.num, total: row.total, lines: row.lines.length } };
+  },
+  trackOrder(phone, num) {
+    const ph = String(phone || '').trim();
+    const nm = String(num || '').trim().toUpperCase();
+    if (!ph || !nm) err('أدخل رقم الهاتف ورقم الطلب');
+    const d = db.load();
+    const o = (d.extorders || []).find(x => x.phone === ph && String(x.num || '').toUpperCase() === nm);
+    if (!o) err('لا طلب بهذه البيانات — تحقق من الرقمين', 404);
+    return { data: { num: o.num, date: o.date, status: o.status, total: o.total, lines: o.lines, remind_date: o.remind_date || '', cancel_reason: o.cancel_reason || '' } };
+  },
+  listExtOrders(ctx) {
+    if (!Auth.can(ctx.role, 'sales', 'view')) err('غير مصرح', 403);
+    const d = db.load();
+    return { data: (d.extorders || []).slice().sort((a, b) => (a.id < b.id ? 1 : -1)) };
+  },
+  decideExtOrder(id, b, ctx) {
+    if (!Auth.can(ctx.role, 'sales', 'invoice')) err('الطلبيات: المدير أو المحاسب فقط', 403);
+    const dec = String((b && b.decision) || '');
+    if (dec !== 'مؤكدة' && dec !== 'مؤجلة' && dec !== 'ملغاة') err('القرار: مؤكدة / مؤجلة / ملغاة');
+    if (dec === 'مؤكدة') {
+      // التحويل لطلبية داخلية: زبون موجود بنفس الهاتف وإلا إنشاء تلقائي، ثم طلبية موثقة مباشرة
+      const Master = require('./master');
+      const md = mdata();
+      const d0 = db.load();
+      const src = (d0.extorders || []).find(x => x.id === Number(id));
+      if (!src) err('الطلب غير موجود', 404);
+      if (src.status !== 'جديدة' && src.status !== 'مؤجلة') err('هذا الطلب عولج مسبقاً (' + src.status + ')');
+      let cust = (md.customers || []).find(c => String(c.phone || '').replace(/[\s-]/g, '') === src.phone && c.active !== false);
+      if (!cust) {
+        cust = Master.addCustomer({ name: src.name, phone: src.phone, address: src.address, kind: 'تجزئة', price_type: 'تجزئة' }, ctx).data;
+      }
+      const cmd = this.addCmdOrder({
+        customer_id: cust.id, date: now().slice(0, 10),
+        delivery_date: now().slice(0, 10), destination: src.address, driver: '',
+        note: 'طلب خارجي ' + src.num + ' — ' + src.name + ' (' + src.phone + ')',
+        items: src.lines.map(l => ({ item_id: l.item_id, qty: l.qty, price: l.price }))
+      }, ctx).data;
+      this.documentCmdOrder(cmd.id, ctx);
+      // إعادة التحميل (addCmdOrder/document حفظا — الحفظ بلقطة قديمة كان سيمحوهما)
+      const d2 = db.load();
+      const o2 = (d2.extorders || []).find(x => x.id === Number(id));
+      o2.status = 'مؤكدة'; o2.cmd_num = cmd.num; o2.cancel_reason = '';
+      o2.decided_by = ctx.user; o2.updated_at = now();
+      db.save(d2);
+      return { data: { id: o2.id, num: o2.num, status: o2.status, cmd_num: o2.cmd_num || '' } };
+    }
+    const d = db.load();
+    const o = (d.extorders || []).find(x => x.id === Number(id));
+    if (!o) err('الطلب غير موجود', 404);
+    if (o.status !== 'جديدة' && o.status !== 'مؤجلة') err('هذا الطلب عولج مسبقاً (' + o.status + ')');
+    if (dec === 'ملغاة') {
+      o.status = 'ملغاة';
+      o.cancel_reason = String((b && b.reason) || '').trim().slice(0, 120) || 'بلا سبب مسجل';
+    } else {
+      o.status = 'مؤجلة';
+      o.remind_date = (b && b.remind_date) ? validDate(b.remind_date, 'تاريخ التذكير') : '';
+      o.cancel_reason = '';
+    }
+    o.decided_by = ctx.user; o.updated_at = now();
+    db.save(d);
+    return { data: { id: o.id, num: o.num, status: o.status, cmd_num: o.cmd_num || '' } };
+  },
+
   // ---- التحصيل ----
   listReceipts(invoice_id, ctx) {
     const d = db.load();

@@ -1,105 +1,13 @@
 {
   "seq": {
-    "profile": 2,
-    "att": 10,
+    "profile": 1,
+    "att": 1,
     "advance": 1,
     "adj": 1,
     "payroll": 1
   },
-  "profiles": [
-    {
-      "id": 1,
-      "worker_id": 1,
-      "job": "مدير",
-      "hire_date": "2026-09-01",
-      "pay_type": "شهري",
-      "pay_amount": 55000,
-      "updated_at": "2026-09-24T12:25:17.900Z"
-    }
-  ],
-  "attendance": [
-    {
-      "id": 1,
-      "worker_id": 1,
-      "date": "2026-09-24",
-      "worker_name": "محمد",
-      "status": "حاضر",
-      "by": "admin",
-      "at": "2026-09-24T12:25:35.232Z"
-    },
-    {
-      "id": 2,
-      "worker_id": 2,
-      "date": "2026-09-24",
-      "worker_name": "احمد",
-      "status": "حاضر",
-      "by": "admin",
-      "at": "2026-09-24T12:25:35.232Z"
-    },
-    {
-      "id": 3,
-      "worker_id": 3,
-      "date": "2026-09-24",
-      "worker_name": "بن علي",
-      "status": "حاضر",
-      "by": "admin",
-      "at": "2026-09-24T12:25:35.233Z"
-    },
-    {
-      "id": 4,
-      "worker_id": 4,
-      "date": "2026-09-24",
-      "worker_name": "بن عليلي",
-      "status": "حاضر",
-      "by": "admin",
-      "at": "2026-09-24T12:25:35.233Z"
-    },
-    {
-      "id": 5,
-      "worker_id": 5,
-      "date": "2026-09-24",
-      "worker_name": "عليلو",
-      "status": "حاضر",
-      "by": "admin",
-      "at": "2026-09-24T12:25:35.233Z"
-    },
-    {
-      "id": 6,
-      "worker_id": 6,
-      "date": "2026-09-24",
-      "worker_name": "عبد الباسط",
-      "status": "حاضر",
-      "by": "admin",
-      "at": "2026-09-24T12:25:35.233Z"
-    },
-    {
-      "id": 7,
-      "worker_id": 7,
-      "date": "2026-09-24",
-      "worker_name": "قاسمي موسى",
-      "status": "حاضر",
-      "by": "admin",
-      "at": "2026-09-24T12:25:35.233Z"
-    },
-    {
-      "id": 8,
-      "worker_id": 8,
-      "date": "2026-09-24",
-      "worker_name": "طيبي العربي",
-      "status": "حاضر",
-      "by": "admin",
-      "at": "2026-09-24T12:25:35.233Z"
-    },
-    {
-      "id": 9,
-      "worker_id": 9,
-      "date": "2026-09-24",
-      "worker_name": "شيخاوي محمد",
-      "status": "حاضر",
-      "by": "admin",
-      "at": "2026-09-24T12:25:35.233Z"
-    }
-  ],
+  "profiles": [],
+  "attendance": [],
   "advances": [],
   "adjustments": [],
   "payrolls": []
