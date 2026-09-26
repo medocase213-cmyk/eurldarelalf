@@ -40,9 +40,9 @@ const db = jstore('system.json', {
   },
   // صفحة الترحيب العمومية (تبويب النظام 10): كل ما يظهر للزوار — تُدمج مع الافتراضيات دائماً
   landing: {
-    announcement: { on: false, text: '' },
+    announcement: { on: false, text: '', speed: 18, opacity: 100, color: '', fontSize: 14, font: '' },
     heroTitle: '', heroSub: '', heroBadge: '',
-    slider: [],
+    slider: [], sliderDuration: 6,
     colors: { primary: '#123524', accent: '#e8a51c', bg: '#f7faf7' },
     font: { family: 'Cairo', title: 32, base: 15 },
     contact: { phones: [], whatsapp: '', address: '', hours: '' },
@@ -176,6 +176,14 @@ function normLanding(v) {
   if (v.announcement && typeof v.announcement === 'object') {
     d.announcement.on = !!v.announcement.on;
     d.announcement.text = s(v.announcement.text, 140);
+    const spd = Number(v.announcement.speed);
+    d.announcement.speed = (Number.isFinite(spd) && spd >= 5 && spd <= 60) ? Math.round(spd) : 18;
+    const op = Number(v.announcement.opacity);
+    d.announcement.opacity = (Number.isFinite(op) && op >= 40 && op <= 100) ? Math.round(op) : 100;
+    d.announcement.color = /^#[0-9a-fA-F]{6}$/.test(v.announcement.color || '') ? v.announcement.color : '';
+    const fs = Number(v.announcement.fontSize);
+    d.announcement.fontSize = (Number.isFinite(fs) && fs >= 12 && fs <= 26) ? Math.round(fs) : 14;
+    d.announcement.font = LANDING_FONTS.includes(v.announcement.font) ? v.announcement.font : '';
   }
   d.heroTitle = s(v.heroTitle, 80); d.heroSub = s(v.heroSub, 160); d.heroBadge = s(v.heroBadge, 60);
   if (Array.isArray(v.slider)) {
@@ -228,6 +236,8 @@ function normLanding(v) {
   }
   d.orderOn = v.orderOn !== false;
   d.orderNote = s(v.orderNote, 200);
+  const sd = Number(v.sliderDuration);
+  d.sliderDuration = (Number.isFinite(sd) && sd >= 3 && sd <= 30) ? Math.round(sd) : 6;
   return d;
 }
 // تطبيع أنماط الترميز للقراءة (افتراضيات + دمج المحفوظ)
