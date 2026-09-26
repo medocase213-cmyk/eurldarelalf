@@ -93,6 +93,86 @@ function fileStats(data) {
   keys.sort((a, b) => b.n - a.n);
   return { records, keys: keys.slice(0, 8) };
 }
+// حارس العدادات بعد الاستعادة: يرفع كل عدّاد فوق أعلى موجود (id والترقيم) —
+// بدونه تُعاد أرقام قديمة فتُرفض العمليات الجديدة أو تتشابك السجلات. لا يُنقص أبداً.
+function seqMaxId(arr) {
+  let m = 0;
+  for (const r of (arr || [])) {
+    const n = Number(r && r.id);
+    if (Number.isInteger(n) && n > m) m = n;
+  }
+  return m;
+}
+function seqMaxTrailing(arr, field) {
+  let m = 0;
+  for (const r of (arr || [])) {
+    const mt = String((r && r[field]) || '').match(/(\d+)(?!.*\d)/);
+    if (mt) { const n = parseInt(mt[1], 10); if (n > m) m = n; }
+  }
+  return m;
+}
+function seqBump(d, key, need, fixes, label) {
+  d.seq = d.seq || {};
+  const cur = Number(d.seq[key]);
+  if (!Number.isInteger(cur) || cur < need) { d.seq[key] = need; fixes.push(label + ' ← ' + need); }
+}
+function repairFileSeq(f) {
+  const fixes = [];
+  let d = null;
+  try { d = JSON.parse(fs.readFileSync(dataPath(f), 'utf8')); } catch { return fixes; }
+  if (!d || typeof d !== 'object') return fixes;
+  const idPair = (arrKey, seqKey, label) => {
+    const m = seqMaxId(d[arrKey]);
+    if (m > 0) seqBump(d, seqKey, m + 1, fixes, (label || seqKey));
+  };
+  const numPair = (arrKey, field, seqKey, label) => {
+    const m = seqMaxTrailing(d[arrKey], field);
+    if (m > 0) seqBump(d, seqKey, m + 1, fixes, (label || seqKey));
+  };
+  if (f === 'master.json') {
+    idPair('categories', 'category'); idPair('items', 'item'); idPair('suppliers', 'supplier');
+    idPair('customers', 'customer'); idPair('workers', 'worker'); idPair('warehouses', 'warehouse');
+    idPair('formulas_ref', 'formula'); idPair('formula_items', 'formula_item');
+    idPair('opening_log', 'opening'); idPair('audit', 'audit'); idPair('jobs', 'job');
+  } else if (f === 'procurement.json') {
+    idPair('orders', 'order'); numPair('orders', 'num', 'order_num', 'ترقيم الطلبيات');
+    idPair('deposits', 'deposit'); idPair('confirmations', 'confirmation');
+  } else if (f === 'inventory.json') {
+    idPair('lots', 'lot'); numPair('lots', 'lot_no', 'lot_num', 'ترقيم اللوتات');
+    idPair('movements', 'mov'); idPair('counts', 'count'); numPair('counts', 'num', 'count_num', 'ترقيم الجرد');
+    idPair('wastes', 'waste');
+    numPair('movements', 'num', 'transfer_num', 'ترقيم التحويلات');
+  } else if (f === 'finance.json') {
+    idPair('payables', 'payable'); idPair('receivables', 'receivable'); idPair('accounts', 'account');
+    idPair('expenses', 'expense'); idPair('incomes', 'income'); idPair('transfers', 'transfer');
+  } else if (f === 'sales.json') {
+    idPair('invoices', 'invoice'); numPair('invoices', 'num', 'invoice_num', 'ترقيم الفواتير');
+    idPair('receipts', 'receipt'); numPair('receipts', 'num', 'receipt_num', 'ترقيم السندات');
+    idPair('returns', 'ret'); numPair('returns', 'num', 'ret_num', 'ترقيم المرتجعات');
+    idPair('cmdorders', 'cmdorder'); numPair('cmdorders', 'num', 'cmdorder_num', 'ترقيم الطلبيات');
+    idPair('extorders', 'extorder'); numPair('extorders', 'num', 'extorder_num', 'ترقيم الخارجي');
+  } else if (f === 'billing.json') {
+    idPair('receipts', 'receipt'); numPair('receipts', 'num', 'receipt_num', 'ترقيم الوصولات');
+    idPair('invoices', 'invoice'); numPair('invoices', 'num', 'invoice_num', 'ترقيم الفواتير');
+  } else if (f === 'production.json') {
+    idPair('orders', 'order'); numPair('orders', 'num', 'order_num', 'ترقيم الأوامر');
+  } else if (f === 'employees.json') {
+    idPair('profiles', 'profile'); idPair('attendance', 'att'); idPair('advances', 'advance');
+    idPair('adjustments', 'adj'); idPair('payrolls', 'payroll');
+  } else if (f === 'users.json') {
+    idPair('users', 'user'); idPair('sessions', 'session'); idPair('events', 'event');
+    let mr = 0;
+    for (const r of (d.roles || [])) {
+      const mt = String((r && r.id) || '').match(/^r(\d+)$/);
+      if (mt && Number(mt[1]) > mr) mr = Number(mt[1]);
+    }
+    if (mr > 0) seqBump(d, 'role', mr + 1, fixes, 'role');
+  }
+  if (fixes.length) {
+    try { fs.writeFileSync(dataPath(f), JSON.stringify(d, null, 2), 'utf8'); } catch {}
+  }
+  return fixes;
+}
 // أرشفة الحماية + كتابة: تُستخدم في كل استعادة (ملف أو لقطة) — سلوك واحد موحد
 const RETENTION_RESTORE = 20; // سقف مجلدات restore-* التلقائية (اليدوية manual-*/full-clean-* مقدسة لا تُمس)
 function archiveAndWrite(names, getContent) {
@@ -685,7 +765,12 @@ const System = {
       if (typeof files[k] !== 'object' || files[k] === null) err('ملف تالف: ' + k);
     }
     const AD = archiveAndWrite(names, k => files[k]);
-    return { data: { restored: names, safety: AD } };
+    const seqFixes = {};
+    for (const k of names) {
+      const fx = repairFileSeq(k);
+      if (fx.length) seqFixes[k] = fx;
+    }
+    return { data: { restored: names, safety: AD, seqFixes } };
   },
   // لقطات الخادم: حفظ مسمى + قائمة + استعادة (كلية/انتقائية) + تنزيل + حذف — بأرشفة حماية تلقائية
   snapSave(b, ctx) {
@@ -747,7 +832,12 @@ const System = {
       if (typeof snapFiles[f] !== 'object' || snapFiles[f] === null) err('ملف اللقطة تالف: ' + f);
     }
     const AD = archiveAndWrite(names, k => snapFiles[k]);
-    return { data: { restored: names, safety: AD, snap: id } };
+    const seqFixes = {};
+    for (const k of names) {
+      const fx = repairFileSeq(k);
+      if (fx.length) seqFixes[k] = fx;
+    }
+    return { data: { restored: names, safety: AD, snap: id, seqFixes } };
   },
   snapDelete(b, ctx) {
     if (ctx.role !== 'admin') err('حذف اللقطات للمدير العام فقط', 403);
