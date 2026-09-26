@@ -309,6 +309,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { send(res, 204, {}); return; }
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
+  // المدخل الرسمي: الترحيب أولاً (محلياً وإنتاجاً)
+  if ((p === '/' || p === '') && req.method === 'GET') {
+    res.writeHead(302, { Location: '/welcome/' });
+    res.end();
+    return;
+  }
   if (serveStatic(req, res, p)) return;
 
   const ctx0 = getCtx(req);
@@ -567,6 +573,10 @@ Master.deleteJob(numId(p, '/api/master/jobs/'), ctx));
     }
     // ---- الطلبات الخارجية (إدارة داخلية بصلاحيات المبيعات) ----
     if (p === '/api/sales/ext-orders' && req.method === 'GET') return send(res, 200, Sales.listExtOrders(getCtx(req)));
+    if (p === '/api/sales/ext-orders/archive' && req.method === 'POST') {
+      try { return send(res, 200, Sales.archiveOldExtOrders(getCtx(req))); }
+      catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
+    }
     if (p.startsWith('/api/sales/ext-orders/') && p.endsWith('/decide') && req.method === 'POST') {
       try { return send(res, 200, Sales.decideExtOrder(numId(p, '/api/sales/ext-orders/'), await body(req), getCtx(req))); }
       catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }

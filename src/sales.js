@@ -576,7 +576,7 @@ const Sales = {
   decideExtOrder(id, b, ctx) {
     if (!Auth.can(ctx.role, 'sales', 'invoice')) err('الطلبيات: المدير أو المحاسب فقط', 403);
     const dec = String((b && b.decision) || '');
-    if (dec !== 'مؤكدة' && dec !== 'مؤجلة' && dec !== 'ملغاة') err('القرار: مؤكدة / مؤجلة / ملغاة');
+    if (dec !== 'مؤكدة' && dec !== 'مؤجلة' && dec !== 'ملغاة' && dec !== 'مؤرشفة') err('القرار: مؤكدة / مؤجلة / ملغاة / مؤرشفة');
     if (dec === 'مؤكدة') {
       // التحويل لطلبية داخلية: زبون موجود بنفس الهاتف وإلا إنشاء تلقائي، ثم طلبية موثقة مباشرة
       const Master = require('./master');
@@ -607,6 +607,15 @@ const Sales = {
     const d = db.load();
     const o = (d.extorders || []).find(x => x.id === Number(id));
     if (!o) err('الطلب غير موجود', 404);
+    if (dec === 'مؤرشفة') {
+      // الأرشفة للمعالَجة فقط (مؤكدة/ملغاة/مؤجلة) — الجديدة تُعالَج أولاً
+      if (o.status === 'جديدة') err('عالج الطلب أولاً (تأكيد/تأجيل/إلغاء) قبل أرشفته');
+      if (o.status === 'مؤرشفة') err('مؤرشف مسبقاً');
+      o.status = 'مؤرشفة';
+      o.decided_by = ctx.user; o.updated_at = now();
+      db.save(d);
+      return { data: { id: o.id, num: o.num, status: o.status, cmd_num: o.cmd_num || '' } };
+    }
     if (o.status !== 'جديدة' && o.status !== 'مؤجلة') err('هذا الطلب عولج مسبقاً (' + o.status + ')');
     if (dec === 'ملغاة') {
       o.status = 'ملغاة';
@@ -619,6 +628,20 @@ const Sales = {
     o.decided_by = ctx.user; o.updated_at = now();
     db.save(d);
     return { data: { id: o.id, num: o.num, status: o.status, cmd_num: o.cmd_num || '' } };
+  },
+  // أرشفة تلقائية: كل معالَج (مؤكدة/ملغاة/مؤجلة) أقدم من 30 يوماً → مؤرشفة
+  archiveOldExtOrders(ctx) {
+    if (!Auth.can(ctx.role, 'sales', 'invoice')) err('الطلبيات: المدير أو المحاسب فقط', 403);
+    const d = db.load();
+    const cut = Date.now() - 30 * 86400000;
+    let n = 0;
+    for (const o of (d.extorders || [])) {
+      if ((o.status === 'مؤكدة' || o.status === 'ملغاة' || o.status === 'مؤجلة') && Date.parse(o.updated_at || o.created_at || '') < cut) {
+        o.status = 'مؤرشفة'; o.updated_at = now(); n++;
+      }
+    }
+    if (n) db.save(d);
+    return { data: { archived: n } };
   },
 
   // ---- التحصيل ----
