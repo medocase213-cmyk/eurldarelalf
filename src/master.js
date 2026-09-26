@@ -108,8 +108,15 @@ function parseShelfMonths(v, field) {
 }
 
 // الهاتف: أرقام فقط (فارغ مسموح) — مع تحويل الأرقام العربية والفارسية
-function checkPhone(p) {
-  let s = String(p || '').trim();
+// صورة الصنف (data URL مضغوطة من المتصفح — حد 300KB ليناسب حد الطلب)
+function checkItemImage(v) {
+  if (v === undefined || v === null || v === '') return undefined;
+  const s = String(v);
+  if (s.length > 300000) throw Object.assign(new Error('الصورة كبيرة (الحد 300KB) — اختر أصغر'), { code: 400 });
+  if (!/^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(s)) throw Object.assign(new Error('الصورة بصيغة data URL فقط (PNG/JPG/WEBP)'), { code: 400 });
+  return s;
+}
+function checkPhone(p) {  let s = String(p || '').trim();
   s = s.replace(/[٠-٩]/g, ch => '٠١٢٣٤٥٦٧٨٩'.indexOf(ch)).replace(/[۰-۹]/g, ch => '۰۱۲۳۴۵۶۷۸۹'.indexOf(ch));
   if (s !== '' && !/^[0-9]+$/.test(s)) throw Object.assign(new Error('الهاتف: أرقام فقط'), { code: 400 });
   return s;
@@ -527,14 +534,6 @@ const Master = {
       status: b.status === 'متوقفة' ? 'متوقفة' : 'نشطة', price_updated_at: now(),
       created_at: now(), updated_at: now()
     };
-    // صورة الصنف (data URL مضغوطة من المتصفح — حد 300KB ليناسب حد الطلب)
-function checkItemImage(v) {
-  if (v === undefined || v === null || v === '') return undefined;
-  const s = String(v);
-  if (s.length > 300000) throw Object.assign(new Error('الصورة كبيرة (الحد 300KB) — اختر أصغر'), { code: 400 });
-  if (!/^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(s)) throw Object.assign(new Error('الصورة بصيغة data URL فقط (PNG/JPG/WEBP)'), { code: 400 });
-  return s;
-}
 // مدة الصلاحية: منتج نهائي → 3 أشهر تلقائياً دون إدخال؛
     // مواد أولية → القيمة المدخلة من البطاقة أو 3 أشهر تلقائياً؛ تغليف → المدخلة فقط
     if (catMain === 'منتج نهائي') row.shelf_months = DEFAULT_PRD_SHELF_MONTHS;
