@@ -519,7 +519,8 @@ const Sales = {
       const it = (md.items || []).find(x => x.id === id) || {};
       out.push({
         item_id: id, item_name: a.item_name, unit: a.unit || it.unit || 'قنطار',
-        remaining: Number(a.remaining || 0), price: this._lastSalePrice(id)
+        remaining: Number(a.remaining || 0), price: this._lastSalePrice(id),
+        image: it.image || ''
       });
     }
     return { data: out.sort((x, y) => String(x.item_name) < String(y.item_name) ? -1 : 1) };

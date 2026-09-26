@@ -523,10 +523,19 @@ const Master = {
       id: d.seq.item++, code: nextCode(d, itemCodeKey(catMain), d.items, b.code), name: b.name.trim(),
       category_id: catId, unit: b.unit,
       min_stock: toNum(b.min_stock, 'الحد الأدنى'), last_price: lp,
+      image: checkItemImage(b.image) || '',
       status: b.status === 'متوقفة' ? 'متوقفة' : 'نشطة', price_updated_at: now(),
       created_at: now(), updated_at: now()
     };
-    // مدة الصلاحية: منتج نهائي → 3 أشهر تلقائياً دون إدخال؛
+    // صورة الصنف (data URL مضغوطة من المتصفح — حد 300KB ليناسب حد الطلب)
+function checkItemImage(v) {
+  if (v === undefined || v === null || v === '') return undefined;
+  const s = String(v);
+  if (s.length > 300000) throw Object.assign(new Error('الصورة كبيرة (الحد 300KB) — اختر أصغر'), { code: 400 });
+  if (!/^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(s)) throw Object.assign(new Error('الصورة بصيغة data URL فقط (PNG/JPG/WEBP)'), { code: 400 });
+  return s;
+}
+// مدة الصلاحية: منتج نهائي → 3 أشهر تلقائياً دون إدخال؛
     // مواد أولية → القيمة المدخلة من البطاقة أو 3 أشهر تلقائياً؛ تغليف → المدخلة فقط
     if (catMain === 'منتج نهائي') row.shelf_months = DEFAULT_PRD_SHELF_MONTHS;
     else if (catMain === 'مواد أولية') {
@@ -551,7 +560,7 @@ const Master = {
     return { data: row };
   },
   updateItem(id, b, ctx) {
-    if (!Auth.can(ctx.role, 'master', 'item')) throw Object.assign(new Error('صلاحية بطاقة المادة: مدير المخزون أو المدير العام فقط'), { code: 403 });
+    if (!Auth.can(ctx.role, 'master', 'item')) throw Object.assign(new Error('بطاقة المادة للمدير العام فقط'), { code: 403 });
     const d = store.load();
     const r = d.items.find(x => x.id === id);
     if (!r) throw Object.assign(new Error('المادة غير موجودة'), { code: 404 });
@@ -593,6 +602,10 @@ const Master = {
       r.last_price = np;
     }
     if (b.status !== undefined) r.status = b.status === 'متوقفة' ? 'متوقفة' : 'نشطة';
+    if (b.image !== undefined) {
+      const img = checkItemImage(b.image);
+      if (img === undefined) delete r.image; else r.image = img;
+    }
     r.updated_at = now();
     // المنتج النهائي لا يُشترى: أي سعر مدخل يُصفّر (تكلفته من الإنتاج)
     const fcat = (d.categories || []).find(c => c.id === Number(r.category_id));
