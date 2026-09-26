@@ -16,11 +16,17 @@ const SECTION_META = {
   quality: { view: ['quality', 'view'], page: 'quality-control/index.html', label: 'الجودة' },
   production: { view: ['production', 'view'], page: 'production/index.html', label: 'الإنتاج' },
   sales: { view: ['sales', 'view'], page: 'sales/index.html', label: 'المبيعات' },
+  ext: { view: ['sales', 'view'], page: 'sales/index.html?tab=ext', label: 'الطلبات الخارجية' },
+  custdebt: { view: ['sales', 'view'], page: 'sales/index.html?tab=custact', label: 'ديون الزبائن' },
+  finprod: { view: ['inventory', 'view'], page: 'inventory/index.html', label: 'المنتجات النهائية', fallbackView: ['production', 'view'] },
 };
 
 // تصنيف التنبيه -> مفتاح إعداد النظام (نفس مفاتيح system.js الأربعة)
 function notifKey(a) {
   const t = String(a.text || '');
+  if (/طلب خارجي/.test(t)) return 'extOrders';
+  if (/دين زبون/.test(t)) return 'custDebts';
+  if (/منتج تام/.test(t)) return 'finProd';
   if (/دفعة منتهية|قرب انتهاء/.test(t)) return 'expiry';
   if (/تحت الحد|قرب الحد|مخزن خام/.test(t)) return 'lowStock';
   if (/بانتظار الموافقة|جزئية مفتوحة|مرفوضة محجوبة/.test(t)) return 'pending';
@@ -32,8 +38,8 @@ function notifKey(a) {
 function loadNotifSettings() {
   try {
     const d = jstore('system.json', { notifications: {} }).load();
-    return Object.assign({ lowStock: true, expiry: true, pending: true, debts: true }, d.notifications || {});
-  } catch { return { lowStock: true, expiry: true, pending: true, debts: true }; }
+    return Object.assign({ lowStock: true, expiry: true, pending: true, debts: true, extOrders: true, custDebts: true, finProd: true }, d.notifications || {});
+  } catch { return { lowStock: true, expiry: true, pending: true, debts: true, extOrders: true, custDebts: true, finProd: true }; }
 }
 
 function canSee(ctx, section) {
@@ -54,6 +60,55 @@ const Notifications = {
     try {
       alerts = (Dash.full(ctx).data.alerts || []).slice();
     } catch (e) { alerts = []; }
+    // أجراس مخصصة: طلبات خارجية + ديون زبائن + منتجات تامة (مصادر مباشرة خفيفة)
+    try {
+      const sd = jstore('sales.json', { extorders: [] }).load();
+      const nowMs = Date.now();
+      for (const o of (sd.extorders || [])) {
+        if (o.status !== 'جديدة' && o.status !== 'مؤجلة') continue;
+        const ageH = (nowMs - Date.parse(o.created_at || '')) / 3600000;
+        alerts.push({
+          section: 'ext',
+          level: (o.status === 'مؤجلة' || ageH > 12) ? 'red' : 'yellow',
+          text: 'طلب خارجي ' + (o.status === 'مؤجلة' ? 'مؤجل' : 'جديد') + ' ' + (o.num || '') + ' — ' + (o.name || '')
+        });
+      }
+    } catch (e) {}
+    try {
+      const Finance = require('./finance');
+      const md = jstore('master.json', { customers: [], items: [], categories: [] }).load();
+      const debtors = (Finance.debts().data.customers || [])
+        .filter(x => Number(x.net || 0) > 0)
+        .sort((a, b) => Number(b.net) - Number(a.net))
+        .slice(0, 5);
+      for (const x of debtors) {
+        const c = (md.customers || []).find(k => Number(k.id) === Number(x.id)) || {};
+        const over = Number(c.debt_limit || 0) > 0 && Number(x.net || 0) > Number(c.debt_limit);
+        alerts.push({
+          section: 'custdebt',
+          level: over ? 'red' : 'yellow',
+          text: 'دين زبون ' + (x.name || '') + ': ' + Number(x.net || 0) + ' دج' + (over ? ' (تجاوز السقف)' : '')
+        });
+      }
+      const Sales = require('./sales');
+      const av = {};
+      try {
+        for (const a of Sales.availability().data) av[Number(a.item_id)] = Number(a.remaining || 0);
+      } catch (e2) {}
+      for (const it of (md.items || [])) {
+        const cat = (md.categories || []).find(k => Number(k.id) === Number(it.category_id));
+        if (!cat || cat.main !== 'منتج نهائي' || it.status === 'متوقفة') continue;
+        const rem = av[Number(it.id)] || 0;
+        const min = Number(it.min_stock || 0);
+        if (min > 0 && rem < min) {
+          alerts.push({
+            section: 'finprod',
+            level: rem <= 0 ? 'red' : 'yellow',
+            text: rem <= 0 ? 'منتج تام نافد: ' + it.name : 'منتج تام تحت الحد: ' + it.name + ' (' + rem + ' من ' + min + ')'
+          });
+        }
+      }
+    } catch (e) {}
     const items = [];
     for (const a of alerts) {
       const k = notifKey(a);

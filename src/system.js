@@ -23,7 +23,7 @@ const db = jstore('system.json', {
     // أنماط مخصصة يضيفها المدير من تبويب الأكواد: key لاتيني ← {label, mode, prefix}
     custom: {}
   },
-  notifications: { lowStock: true, expiry: true, pending: true, debts: true },
+  notifications: { lowStock: true, expiry: true, pending: true, debts: true, extOrders: true, custDebts: true, finProd: true },
   // الضبط المركزي للتتبع الذكي (المرحلة 5): مهلة الخمول الافتراضية + عتبات حكم المصنع
   tracking: { defaultIdleDays: 7, vExcellent: 80, vStable: 60, vWarn: 40 },
   // تخصيص البطاقات (تبويب النظام 7): "القسم||الاسم الأصلي" ← {label?, icon?, hidden?}
@@ -395,7 +395,7 @@ const System = {
       }
     }
     if (b.notifications !== undefined) {
-      for (const k of ['lowStock', 'expiry', 'pending', 'debts']) {
+      for (const k of ['lowStock', 'expiry', 'pending', 'debts', 'extOrders', 'custDebts', 'finProd']) {
         if (b.notifications[k] !== undefined) d.notifications[k] = !!b.notifications[k];
       }
     }
