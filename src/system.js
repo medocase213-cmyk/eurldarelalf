@@ -40,7 +40,7 @@ const db = jstore('system.json', {
   },
   // صفحة الترحيب العمومية (تبويب النظام 10): كل ما يظهر للزوار — تُدمج مع الافتراضيات دائماً
   landing: {
-    announcement: { on: false, text: '', speed: 18, opacity: 100, color: '', fontSize: 14, font: '' },
+    announcement: { on: false, text: '', speed: 18, opacity: 100, color: '', fontSize: 14, font: '', textColor: '', weight: 'bold', italic: false },
     heroTitle: '', heroSub: '', heroBadge: '',
     slider: [], sliderDuration: 6,
     colors: { primary: '#123524', accent: '#e8a51c', bg: '#f7faf7' },
@@ -261,6 +261,10 @@ function normLanding(v) {
     const op = Number(v.announcement.opacity);
     d.announcement.opacity = (Number.isFinite(op) && op >= 40 && op <= 100) ? Math.round(op) : 100;
     d.announcement.color = /^#[0-9a-fA-F]{6}$/.test(v.announcement.color || '') ? v.announcement.color : '';
+    const tc = v.announcement.textColor;
+    d.announcement.textColor = /^#[0-9a-fA-F]{6}$/.test(tc || '') ? tc : '';
+    d.announcement.weight = v.announcement.weight === 'normal' ? 'normal' : 'bold';
+    d.announcement.italic = !!v.announcement.italic;
     const fs = Number(v.announcement.fontSize);
     d.announcement.fontSize = (Number.isFinite(fs) && fs >= 12 && fs <= 26) ? Math.round(fs) : 14;
     d.announcement.font = LANDING_FONTS.includes(v.announcement.font) ? v.announcement.font : '';
