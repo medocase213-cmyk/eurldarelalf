@@ -132,11 +132,19 @@ const Proc = {
     const paidMonth = r2(d.deposits.filter(x => CASH_METHODS.includes(x.method) && String(x.date || '').startsWith(month)).reduce((s, x) => s + Number(x.amount || 0), 0));
     const confs = d.confirmations.slice().sort((a, b) => (a.id < b.id ? 1 : -1));
     const last = confs[0] ? d.orders.find(o => o.id === confs[0].order_id) : null;
+    // مشتريات الشهر (المواد الأولية المستلمة): الكمية والقيمة من التأكيدات
+    let monthQty = 0, monthValue = 0;
+    for (const c of (d.confirmations || [])) {
+      if (!String(c.arrival_date || '').startsWith(month)) continue;
+      monthValue = r2(monthValue + Number(c.received_total || 0));
+      for (const l of (c.lines || [])) monthQty = r2(monthQty + Number(l.received_qty || 0));
+    }
     return {
       data: {
         pendingApproval: d.orders.filter(o => o.status === 'بانتظار الموافقة').length,
         approvedWaiting: d.orders.filter(o => o.status === 'معتمدة').length,
         depositsMonth: paidMonth,
+        monthQty, monthValue,
         lastConfirmed: last ? { num: last.num, date: confs[0].arrival_date, supplier: last.supplier_name } : null,
         partialOpen: d.orders.filter(o => o.status === 'مؤكدة جزئياً').length
       }

@@ -121,6 +121,7 @@ const Prod = {
         week: sum(done.filter(o => String(o.closed_at || '').slice(0, 10) >= weekAgo)),
         month: sum(inMonth),
         wip: d.orders.filter(o => o.status === 'قيد التنفيذ').length,
+        orders: d.orders.length,
         wastePct: th > 0 ? Math.round((wa / th) * 1000) / 10 : 0
       }
     };

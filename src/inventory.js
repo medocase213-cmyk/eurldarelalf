@@ -161,12 +161,24 @@ const Inv = {
     const exp = d.lots.filter(l => Number(l.remaining || 0) > 0 && effQc(l) === 'مقبولة' && (() => { const dl = daysLeft(l); return dl !== null && dl >= 0 && dl <= EXPIRY_NEAR_DAYS; })()).length;
     const lastCount = d.counts.slice().sort((a, b) => (a.date < b.date ? 1 : -1))[0];
     const lastWaste = d.wastes.filter(w => w.status === 'مؤكدة').slice().sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+    // إجماليات حسب نوع المخزن: مواد أولية مقابل منتج نهائي
+    const wtype = {};
+    try {
+      for (const w of (md.warehouses || [])) wtype[Number(w.id)] = w.type;
+    } catch {}
+    let rawQty = 0, finQty = 0, finValue = 0;
+    for (const r of bal) {
+      const t = wtype[Number(r.warehouse_id)];
+      if (t === 'منتج نهائي') { finQty = r2(finQty + Number(r.qty || 0)); finValue = r2(finValue + Number(r.value || 0)); }
+      else { rawQty = r2(rawQty + Number(r.qty || 0)); }
+    }
     return {
       data: {
         lowCount: low,
         expiringCount: exp,
         lastCountDate: lastCount ? lastCount.date : null,
         stockValue: r2(bal.reduce((s, r) => s + r.value, 0)),
+        rawQty, finQty, finValue,
         lastWaste: lastWaste ? { item: lastWaste.item_name, qty: lastWaste.qty, date: lastWaste.date } : null
       }
     };

@@ -133,11 +133,13 @@ const Sales = {
     const conf = d.invoices.filter(o => o.status === 'مؤكدة');
     const t = now().slice(0, 10), month = t.slice(0, 7);
     const sumT = arr => r2(arr.reduce((s, o) => s + Number(o.total || 0), 0));
+    const sumQ = arr => r2(arr.reduce((s, o) => s + (o.lines || []).reduce((a, l) => a + Number(l.qty || 0), 0), 0));
     let recv = 0;
     for (const o of conf) recv = r2(recv + invoiceView(d, o).remaining);
     return {
       data: {
         today: sumT(conf.filter(o => o.date === t)),
+        todayQty: sumQ(conf.filter(o => o.date === t)),
         month: sumT(conf.filter(o => String(o.date).startsWith(month))),
         receivables: recv,
         last: conf.slice().sort((a, b) => (a.id < b.id ? 1 : -1))[0] || null,
