@@ -181,8 +181,11 @@ function normLanding(v) {
   if (Array.isArray(v.slider)) {
     for (const it of v.slider.slice(0, 10)) {
       if (!it || typeof it !== 'object') continue;
-      const img = s(it.img, 500);
-      if (!/^https?:\/\/.+/i.test(img)) continue;
+      const img = s(it.img, 700000);
+      // رابط خارجي أو صورة محلية base64 (مضغوطة من المتصفح — حد 700KB ليناسب حد الطلب)
+      const okUrl = /^https?:\/\/.+/i.test(img);
+      const okData = /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(img);
+      if (!okUrl && !okData) continue;
       d.slider.push({ img, title: s(it.title, 80), sub: s(it.sub, 160) });
     }
   }
