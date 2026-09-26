@@ -38,6 +38,17 @@ const db = jstore('system.json', {
     textColor: '', bg: '', opacity: 100, elevation: 2,
     levels: { info: '#2563eb', warning: '#d97706', error: '#ea580c', critical: '#dc2626' }
   },
+  // صفحة الترحيب العمومية (تبويب النظام 10): كل ما يظهر للزوار — تُدمج مع الافتراضيات دائماً
+  landing: {
+    announcement: { on: false, text: '' },
+    heroTitle: '', heroSub: '', heroBadge: '',
+    slider: [],
+    colors: { primary: '#123524', accent: '#e8a51c', bg: '#f7faf7' },
+    font: { family: 'Cairo', title: 32, base: 15 },
+    contact: { phones: [], whatsapp: '', address: '', hours: '' },
+    products: {},
+    orderOn: true, orderNote: ''
+  },
   changelog: []
 });
 const now = () => new Date().toISOString();
@@ -146,6 +157,76 @@ function normBranding(b) {  const d = brandingDefaults();
   }
   return out;
 }
+// تطبيع إعدادات صفحة الترحيب (افتراضيات + دمج المحفوظ + تنقية دفاعية)
+const LANDING_FONTS = ['Cairo', 'Tajawal', 'Almarai', 'Readex Pro'];
+function normHex(v, dflt) { return /^#[0-9a-fA-F]{6}$/.test(String(v || '')) ? String(v) : dflt; }
+function normLanding(v) {
+  const d = {
+    announcement: { on: false, text: '' },
+    heroTitle: '', heroSub: '', heroBadge: '',
+    slider: [],
+    colors: { primary: '#123524', accent: '#e8a51c', bg: '#f7faf7' },
+    font: { family: 'Cairo', title: 32, base: 15 },
+    contact: { phones: [], whatsapp: '', address: '', hours: '' },
+    products: {},
+    orderOn: true, orderNote: ''
+  };
+  if (!v || typeof v !== 'object') return d;
+  const s = (x, n) => String(x == null ? '' : x).slice(0, n);
+  if (v.announcement && typeof v.announcement === 'object') {
+    d.announcement.on = !!v.announcement.on;
+    d.announcement.text = s(v.announcement.text, 140);
+  }
+  d.heroTitle = s(v.heroTitle, 80); d.heroSub = s(v.heroSub, 160); d.heroBadge = s(v.heroBadge, 60);
+  if (Array.isArray(v.slider)) {
+    for (const it of v.slider.slice(0, 10)) {
+      if (!it || typeof it !== 'object') continue;
+      const img = s(it.img, 500);
+      if (!/^https?:\/\/.+/i.test(img)) continue;
+      d.slider.push({ img, title: s(it.title, 80), sub: s(it.sub, 160) });
+    }
+  }
+  if (v.colors && typeof v.colors === 'object') {
+    d.colors.primary = normHex(v.colors.primary, d.colors.primary);
+    d.colors.accent = normHex(v.colors.accent, d.colors.accent);
+    d.colors.bg = normHex(v.colors.bg, d.colors.bg);
+  }
+  if (v.font && typeof v.font === 'object') {
+    if (LANDING_FONTS.includes(v.font.family)) d.font.family = v.font.family;
+    const t = Number(v.font.title), b2 = Number(v.font.base);
+    if (Number.isFinite(t) && t >= 18 && t <= 60) d.font.title = Math.round(t);
+    if (Number.isFinite(b2) && b2 >= 12 && b2 <= 24) d.font.base = Math.round(b2);
+  }
+  if (v.contact && typeof v.contact === 'object') {
+    if (Array.isArray(v.contact.phones)) {
+      for (const p of v.contact.phones.slice(0, 3)) {
+        const digits = String(p || '').replace(/\D/g, '');
+        if (digits.length >= 9 && digits.length <= 15) d.contact.phones.push(digits);
+      }
+    }
+    const wa = String(v.contact.whatsapp || '').replace(/\D/g, '');
+    if (wa && wa.length >= 9 && wa.length <= 15) d.contact.whatsapp = wa;
+    d.contact.address = s(v.contact.address, 120);
+    d.contact.hours = s(v.contact.hours, 120);
+  }
+  if (v.products && typeof v.products === 'object' && !Array.isArray(v.products)) {
+    for (const k of Object.keys(v.products).slice(0, 200)) {
+      if (!/^\d+$/.test(k)) continue;
+      const e = v.products[k];
+      if (!e || typeof e !== 'object') continue;
+      const price = e.price === null || e.price === undefined || e.price === '' ? null : Number(e.price);
+      const old = e.old === null || e.old === undefined || e.old === '' ? null : Number(e.old);
+      d.products[k] = {
+        show: e.show !== false,
+        price: (price === null || !Number.isFinite(price) || price < 0) ? null : Math.round(price * 100) / 100,
+        old: (old === null || !Number.isFinite(old) || old < 0) ? null : Math.round(old * 100) / 100
+      };
+    }
+  }
+  d.orderOn = v.orderOn !== false;
+  d.orderNote = s(v.orderNote, 200);
+  return d;
+}
 // تطبيع أنماط الترميز للقراءة (افتراضيات + دمج المحفوظ)
 const CODEMODE_FIXED = ['suppliers', 'customers', 'workers', 'warehouses', 'items', 'categories'];
 // مفاتيح محجوزة لا تصلح كمفتاح نمط مخصص (أنواع ثابتة + مرقّمات مستندات + عدّادات داخلية)
@@ -199,6 +280,7 @@ const System = {
   get() {
     const d = db.load();
     d.branding = normBranding(d.branding); d.codemode = normCodemode(d.codemode);
+    d.landing = normLanding(d.landing);
     // ترحيل صامت: صيغ ترقيم مستجدة (مثل cmd) تُضاف دون مساس بتخصيصات المدير
     try {
       d.numbering = d.numbering || {};
@@ -209,7 +291,7 @@ const System = {
   pub() {
     const d = db.load();
     const openMode = ['1', 'true', 'yes', 'on'].includes(String(process.env.OPEN_MODE || '').toLowerCase());
-    return { data: { factory: { name: (d.factory || {}).name || 'دار العلف', address: (d.factory || {}).address || '', phone: (d.factory || {}).phone || '', commercialReg: (d.factory || {}).commercialReg || '', taxId: (d.factory || {}).taxId || '', artImp: (d.factory || {}).artImp || '', bank: (d.factory || {}).bank || '' }, currency: ((d.finance || {}).currency) || 'دج', notifications: d.notifications || {}, cards: d.cards || {}, branding: normBranding(d.branding), helpCards: d.helpCards || {}, codemode: normCodemode(d.codemode), openMode } };
+    return { data: { factory: { name: (d.factory || {}).name || 'دار العلف', address: (d.factory || {}).address || '', phone: (d.factory || {}).phone || '', commercialReg: (d.factory || {}).commercialReg || '', taxId: (d.factory || {}).taxId || '', artImp: (d.factory || {}).artImp || '', bank: (d.factory || {}).bank || '' }, currency: ((d.finance || {}).currency) || 'دج', notifications: d.notifications || {}, cards: d.cards || {}, branding: normBranding(d.branding), helpCards: d.helpCards || {}, codemode: normCodemode(d.codemode), landing: normLanding(d.landing), openMode } };
     },
   // صيغة مثل BC-{YYYY}-{NNN} — نفس المخرجات القديمة حرفياً عند الافتراضيات
   formatNum(doc, o) {
@@ -528,6 +610,9 @@ const System = {
           }
         }
       }
+    }
+    if (b.landing !== undefined) {
+      d.landing = normLanding(b.landing);
     }
     db.save(d);
     return { data: d };

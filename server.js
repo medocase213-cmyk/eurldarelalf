@@ -139,7 +139,7 @@ function needPerm(ctx, sec, act) {
   if (!Auth.can(ctx.role, sec, act)) throw Object.assign(new Error('غير مصرح لك بهذا الإجراء'), { code: 403 });
 }
 const W = (re, sec, act) => ({ re, sec, act });
-const NO_PERM = ['/api/health', '/api/login', '/api/logout', '/api/system/public', '/api/public/catalog', '/api/public/orders', '/api/public/orders/track'];
+const NO_PERM = ['/api/health', '/api/login', '/api/logout', '/api/system/public', '/api/public/catalog', '/api/public/landing', '/api/public/orders', '/api/public/orders/track'];
 const AUTH_ONLY = ['/api/auth/password', '/api/auth/permissions', '/api/dashboard', '/api/notifications'];
 const READ_PERM = [
   ['/api/master/', 'master', 'view'],
@@ -552,6 +552,7 @@ Master.deleteJob(numId(p, '/api/master/jobs/'), ctx));
     // ---- طلبيات الزبائن: مسودة ← موثقة ← محولة لفاتورة (بلا أثر مخزني/مالي) ----
     // ---- الواجهة العمومية (بلا دخول): كتالوج + طلب خارجي + تتبع ----
     if (p === '/api/public/catalog' && req.method === 'GET') return send(res, 200, Sales.publicCatalog());
+    if (p === '/api/public/landing' && req.method === 'GET') return send(res, 200, Sales.publicLanding());
     if (p === '/api/public/orders/track' && req.method === 'GET') {
       try { return send(res, 200, Sales.trackOrder(url.searchParams.get('phone'), url.searchParams.get('num'))); }
       catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }

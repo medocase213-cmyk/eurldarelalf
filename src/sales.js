@@ -473,8 +473,25 @@ const Sales = {
     } catch {}
     return 0;
   },
-  publicCatalog() {
-    const md = mdata();
+  // حزمة صفحة الترحيب العمومية: المصنع + إعدادات الواجهة + الكتالوج بعد تجاوزات المدير
+  publicLanding() {
+    const sys = System.get();
+    const L = (sys && sys.landing) || {};
+    const cat = this.publicCatalog().data;
+    const ov = (L.products && typeof L.products === 'object') ? L.products : {};
+    const products = cat
+      .filter(p => { const o = ov[String(p.item_id)]; return !o || o.show !== false; })
+      .map(p => {
+        const o = ov[String(p.item_id)] || {};
+        return {
+          item_id: p.item_id, item_name: p.item_name, unit: p.unit, remaining: p.remaining,
+          price: (o.price !== null && o.price !== undefined) ? o.price : p.price,
+          old: (o.old !== null && o.old !== undefined) ? o.old : null
+        };
+      });
+    return { data: { factory: (sys.factory || {}), landing: L, products } };
+  },
+  publicCatalog() {    const md = mdata();
     const finIds = new Set((md.items || []).filter(it => {
       const c = (md.categories || []).find(x => x.id === Number(it.category_id));
       return c && c.main === 'منتج نهائي' && it.status !== 'متوقفة';
