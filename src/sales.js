@@ -280,16 +280,17 @@ const Sales = {
     if (o.status !== 'مسودة') err('التأكيد من مسودة فقط');
     this._mine(o, ctx, 'الفاتورة');
     for (const ln of o.lines) getProduct(md, ln.item_id); // إعادة التحقق لحظة البيع (قد تكون أُعيد تصنيفها بعد المسودة)
-    // منع الخصم المزدوج: أي خروج سابق لهذه الفاتورة يعني تأكيداً سابقاً (نقر مزدوج/إعادة محاولة)
+    // منع الخصم المزدوج: مطابقة بالمعرف أولاً (الأرقام قد تُعاد بعد استعادة/تصفير)
     try {
       const invDb = require('./jstore')('inventory.json', { lots: [], movements: [] });
-      const prior = ((invDb.load().movements) || []).some(m => m.type === 'خروج' && m.source && m.source.kind === 'فاتورة' && String(m.source.num || '') === String(o.num || ''));
+      const prior = ((invDb.load().movements) || []).some(m => m.type === 'خروج' && m.source && m.source.kind === 'فاتورة'
+        && (m.source.invoice_id != null ? Number(m.source.invoice_id) === Number(id) : String(m.source.num || '') === String(o.num || '')));
       if (prior) err('صُرفت هذه الفاتورة مسبقاً (' + o.num + ') — التأكيد المكرر مرفوض لمنع الخصم المزدوج', 409);
     } catch (e) { if (e && e.code === 409) throw e; }
     const inv = require('./inventory-check');
     // خصم FEFO الشامل لكل مخازن التام + لقطة التكلفة لكل سطر (مطابق لرقم التوافر المعروض)
     for (const ln of o.lines) {
-      const taken = inv.consumeMulti([{ item_id: ln.item_id, qty: ln.qty }], { kind: 'فاتورة', num: o.num }, ctx.user, 'بيع ' + o.num, ['منتج نهائي']);
+      const taken = inv.consumeMulti([{ item_id: ln.item_id, qty: ln.qty }], { kind: 'فاتورة', num: o.num, invoice_id: o.id }, ctx.user, 'بيع ' + o.num, ['منتج نهائي']);
       const val = r2(taken.reduce((s, c) => s + c.value, 0));
       ln.cost_snapshot = r2(val / ln.qty);
       ln.margin = r2((ln.price - ln.cost_snapshot) * ln.qty);
@@ -304,7 +305,7 @@ const Sales = {
       let need = 0;
       for (const ln of o.lines) need += Math.ceil(Number(ln.qty || 0) * bagPerQ - 1e-9);
       if (need > 0) {
-        const res = inv.consumeUpTo(bagIt.id, need, { kind: 'فاتورة', num: o.num }, ctx.user, 'أكياس البيع — ' + o.num, ['مواد أولية']);
+        const res = inv.consumeUpTo(bagIt.id, need, { kind: 'فاتورة', num: o.num, invoice_id: o.id }, ctx.user, 'أكياس البيع — ' + o.num, ['مواد أولية']);
         o.bags.qty = res.took; o.bags.shortfall = res.shortfall;
       }
     }
