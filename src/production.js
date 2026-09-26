@@ -246,7 +246,8 @@ const Prod = {
     // أغلقه أو سوّ صرفياته أولاً حتى لا تضيع الكميات بلا منتج
     try {
       const invDb0 = require('./jstore')('inventory.json', { lots: [], movements: [] });
-      const hasOut = ((invDb0.load().movements) || []).some(m => m.type === 'خروج' && m.source && m.source.kind === 'إنتاج' && String(m.source.num || '') === String(o.num || ''));
+      const hasOut = ((invDb0.load().movements) || []).some(m => m.type === 'خروج' && m.source && m.source.kind === 'إنتاج'
+        && (m.source.order_id != null ? Number(m.source.order_id) === Number(id) : String(m.source.num || '') === String(o.num || '')));
       if (hasOut) err('للأمر «' + o.num + '» صرفيات مخزون مسجلة — الإلغاء سيتركها معلقة بلا منتج؛ أغلق الأمر أو سوّها أولاً', 409);
     } catch (e) { if (e && e.code === 409) throw e; }
     o.status = 'ملغاة';
@@ -284,7 +285,8 @@ const Prod = {
     try {
       const invDb = require('./jstore')('inventory.json', { lots: [] });
       const invD = invDb.load();
-      const prior = ((invD.movements) || []).some(m => m.type === 'خروج' && m.source && m.source.kind === 'إنتاج' && String(m.source.num || '') === String(o.num || ''));
+      const prior = ((invD.movements) || []).some(m => m.type === 'خروج' && m.source && m.source.kind === 'إنتاج'
+        && (m.source.order_id != null ? Number(m.source.order_id) === Number(id) : String(m.source.num || '') === String(o.num || '')));
       if (prior) err('صُرف لهذا الأمر مسبقاً (' + o.num + ') — راجع حركات المخزون؛ الإغلاق المكرر مرفوض لمنع الخصم المزدوج', 409);
       const allLots = ((invD.lots) || []).filter(l => l.warehouse_id === o.dst_wh && r2(Number(l.remaining || 0)) > 0 && Number(l.item_id) !== Number(o.product_id));
       const others = [...new Set(allLots.map(l => l.item_name))];
@@ -296,10 +298,10 @@ const Prod = {
     } catch (e) { if (e && e.code === 409) throw e; }
     // الصرف FEFO الشامل لمخازن الخام + التقييم بأسعار اللوتات (أول كتابة للمخزون في الإغلاق)
     const inv = require('./inventory-check');
-    const consumed = inv.consumeMulti(needs.map(n => ({ item_id: n.item_id, item_name: n.item_name, unit: n.unit, qty: n.need, theo: n.qty })), { kind: 'إنتاج', num: o.num }, ctx.user, 'أمر ' + o.num);
+    const consumed = inv.consumeMulti(needs.map(n => ({ item_id: n.item_id, item_name: n.item_name, unit: n.unit, qty: n.need, theo: n.qty })), { kind: 'إنتاج', num: o.num, order_id: o.id }, ctx.user, 'أمر ' + o.num);
     let packConsumed = [];
     if (pkNeeds.length) {
-      packConsumed = inv.consumeMulti(pkNeeds.map(n => ({ item_id: n.item_id, item_name: n.item_name, unit: n.unit, qty: n.qty, theo: n.qty })), { kind: 'إنتاج', num: o.num }, ctx.user, 'تغليف أمر ' + o.num);
+      packConsumed = inv.consumeMulti(pkNeeds.map(n => ({ item_id: n.item_id, item_name: n.item_name, unit: n.unit, qty: n.qty, theo: n.qty })), { kind: 'إنتاج', num: o.num, order_id: o.id }, ctx.user, 'تغليف أمر ' + o.num);
     }
     const rawValue = r2(consumed.reduce((s, c) => s + c.value, 0));
     const packValue = r2(packConsumed.reduce((s, c) => s + c.value, 0));
