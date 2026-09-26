@@ -816,6 +816,33 @@ const Master = {
     if (toNum(r[openField] ?? 0, 'الرصيد') !== 0 || d.opening_log.some(o => o.entity === logEntity && o.ref_id === id)) {
       throw Object.assign(new Error('ممنوع الحذف: توجد أرصدة أو حركات مرتبطة — عطّل البطاقة بدل الحذف'), { code: 400 });
     }
+    // روابط حية: الحذف هنا يُيتّم سجلات الأقسام — المنع مع السبب والحل
+    const liveLinks = require('./jstore');
+    if (col === 'suppliers') {
+      const pd = liveLinks('procurement.json', { orders: [], deposits: [], confirmations: [] }).load();
+      const no = (pd.orders || []).filter(x => Number(x.supplier_id) === Number(id)).length;
+      const nc = (pd.confirmations || []).filter(x => Number(x.supplier_id) === Number(id)).length;
+      const nd = (pd.deposits || []).filter(x => Number(x.supplier_id) === Number(id)).length;
+      if (no + nc + nd > 0) {
+        throw Object.assign(new Error('ممنوع الحذف: المورد مرتبط بـ ' + no + ' طلبية و' + nc + ' تأكيد و' + nd + ' دفعة — عطّل البطاقة بدل الحذف (تبقى السجلات سليمة)'), { code: 400 });
+      }
+    }
+    if (col === 'customers') {
+      const sd = liveLinks('sales.json', { invoices: [], receipts: [], cmdorders: [] }).load();
+      const ni = (sd.invoices || []).filter(x => Number(x.customer_id) === Number(id)).length;
+      const nc = (sd.cmdorders || []).filter(x => Number(x.customer_id) === Number(id)).length;
+      if (ni + nc > 0) {
+        throw Object.assign(new Error('ممنوع الحذف: الزبون مرتبط بـ ' + ni + ' فاتورة و' + nc + ' طلبية — عطّل البطاقة بدل الحذف (تبقى السجلات سليمة)'), { code: 400 });
+      }
+    }
+    if (col === 'workers') {
+      const ed = liveLinks('employees.json', { profiles: [], attendance: [], advances: [], adjustments: [], payrolls: [] }).load();
+      const hits = ['profiles', 'attendance', 'advances', 'adjustments', 'payrolls']
+        .map(k => ((ed[k] || []).some(x => Number(x.worker_id) === Number(id)) ? k : null)).filter(Boolean);
+      if (hits.length) {
+        throw Object.assign(new Error('ممنوع الحذف: العامل مرتبط بسجلات الموظفين — عطّل البطاقة بدل الحذف (تبقى السجلات سليمة)'), { code: 400 });
+      }
+    }
     d[col].splice(i, 1);
     audit(d, 'delete', col.slice(0, -1), id, ctx.user, ctx.role);
     store.save(d);
@@ -962,6 +989,12 @@ const Master = {
     const i = d.warehouses.findIndex(x => x.id === id);
     if (i < 0) throw Object.assign(new Error('غير موجود'), { code: 404 });
     if (d.warehouses[i].fixed) throw Object.assign(new Error('ممنوع حذف المخزنين الثابتين: المواد الأولية والمنتج النهائي'), { code: 400 });
+    // مخزن به رصيد: الحذف يبتر اللوتات — المنع مع الحل (تحويل الرصيد أولاً من المخزون)
+    try {
+      const invD = require('./jstore')('inventory.json', { lots: [] }).load();
+      const left = (invD.lots || []).filter(l => Number(l.warehouse_id) === Number(id)).reduce((s, l) => s + Number(l.remaining || 0), 0);
+      if (left > 0) throw Object.assign(new Error('ممنوع الحذف: المخزن به رصيد ' + left + ' — حوّله لمخزن آخر من تبويب المخزون ثم احذف'), { code: 400 });
+    } catch (e) { if (e && e.code === 400) throw e; }
     d.warehouses.splice(i, 1);
     audit(d, 'delete', 'warehouse', id, ctx.user, ctx.role);
     store.save(d);

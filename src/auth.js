@@ -56,7 +56,7 @@ function seedPerms() {
   V.master.view = true;
   V.inventory.view = true;
   V.sales.view = V.sales.invoice = V.sales.receipt = true;
-  for (const a of SECTIONS.master.actions) S.master[a] = true;
+  for (const a of SECTIONS.master.actions) S.master[a] = (a === 'view');
   S.procurement.view = S.procurement.order = true;
   S.procurement.confirm = true;
   S.quality.view = S.quality.decide = true;
@@ -66,7 +66,7 @@ function seedPerms() {
   S.sales.view = true;
   S.finance.view = true;
   S.employees.view = S.employees.attend = true;
-  A.master.view = A.master.party = true;
+  A.master.view = true;
   A.procurement.view = A.procurement.order = A.procurement.deposit = A.procurement.confirm = true;
   A.quality.view = A.inventory.view = A.trace.view = A.formulas.view = A.reports.view = A.system.view = true;
   A.production.view = true;
@@ -114,6 +114,14 @@ function load() {
           if (r.perms[sec][a] === undefined) { r.perms[sec][a] = false; touched = true; }
         }
       }
+    }
+    // سياسة البيانات الأساسية: الإضافة والتعديل والحذف للمدير العام فقط — أي دور آخر قراءة فقط
+    for (const r of d.roles) {
+      if (r.id === 'admin') continue;
+      r.perms = r.perms || {};
+      const m = r.perms.master || {};
+      if (m.item || m.party || m.opening) { m.item = false; m.party = false; m.opening = false; touched = true; }
+      r.perms.master = m;
     }
     if (touched) db.save(d);
   }
@@ -466,6 +474,10 @@ const Auth = {
       r.label = String(b.label).trim();
     }
     if (b.perms !== undefined) {
+      // سياسة البيانات الأساسية: لا منح لتعديلها خارج المدير العام — الرفض الصريح أوضح من التجريد الصامت
+      if (String(id) !== 'admin' && b.perms.master && (b.perms.master.item || b.perms.master.party || b.perms.master.opening)) {
+        err('صلاحيات البيانات الأساسية (إضافة/تعديل/حذف) للمدير العام فقط — تُمنح القراءة فقط لباقي الأدوار');
+      }
       for (const sec of Object.keys(b.perms)) {
         if (!SECTIONS[sec]) err('قسم غير صالح: ' + sec);
         for (const a of Object.keys(b.perms[sec])) {

@@ -477,19 +477,29 @@ const Sales = {
   publicLanding() {
     const sys = System.get();
     const L = (sys && sys.landing) || {};
-    const cat = this.publicCatalog().data;
-    const ov = (L.products && typeof L.products === 'object') ? L.products : {};
-    const products = cat
-      .filter(p => { const o = ov[String(p.item_id)]; return !o || o.show !== false; })
-      .map(p => {
-        const o = ov[String(p.item_id)] || {};
-        return {
-          item_id: p.item_id, item_name: p.item_name, unit: p.unit, remaining: p.remaining,
-          price: (o.price !== null && o.price !== undefined) ? o.price : p.price,
-          old: (o.old !== null && o.old !== undefined) ? o.old : null
-        };
-      });
+    const cat = this._applyPriceOverrides(this.publicCatalog().data);
+    const products = cat.filter(p => {
+      const o = ((L.products && typeof L.products === 'object') ? L.products : {})[String(p.item_id)];
+      return !o || o.show !== false;
+    });
     return { data: { factory: (sys.factory || {}), landing: L, products } };
+  },
+  // تجاوزات أسعار المدير (النظام ← صفحة الترحيب): تُطبق على الكتالوج العلني وتسعير الطلبات
+  _priceOverrides() {
+    try {
+      const L = (System.get() || {}).landing || {};
+      return (L.products && typeof L.products === 'object') ? L.products : {};
+    } catch { return {}; }
+  },
+  _applyPriceOverrides(list) {
+    const ov = this._priceOverrides();
+    return (list || []).map(p => {
+      const o = ov[String(p.item_id)] || {};
+      return Object.assign({}, p, {
+        price: (o.price !== null && o.price !== undefined) ? o.price : p.price,
+        old: (o.old !== null && o.old !== undefined) ? o.old : null
+      });
+    });
   },
   publicCatalog() {    const md = mdata();
     const finIds = new Set((md.items || []).filter(it => {
@@ -528,7 +538,7 @@ const Sales = {
     if (b.items.length > 10) err('عشرة منتجات كحد أقصى في الطلب الواحد');
     const cat = {};
     try {
-      for (const p of this.publicCatalog().data) cat[Number(p.item_id)] = p;
+      for (const p of this._applyPriceOverrides(this.publicCatalog().data)) cat[Number(p.item_id)] = p;
     } catch {}
     const seen = {};
     const lines = [];
