@@ -1,0 +1,10 @@
+# البيانات الحية والنسخ — لا تُرفع إلى Git أبداً (قرار احترافي: الكود منفصل عن البيانات)
+data/
+data-archive/
+design-backups/
+*.bak-*
+*.bak
+*.tmp
+*.log
+.env
+node_modules/
