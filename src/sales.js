@@ -165,6 +165,10 @@ const Sales = {
       const v = invoiceView(d, o);
       invTotal = r2(invTotal + o.total); paid = r2(paid + v.paid); ret = r2(ret + v.retVal);
     }
+    // التحصيلات المستقلة (بلا فاتورة) تنقص الدين العام — كالمالية تماماً
+    paid = r2(paid + (d.receipts || [])
+      .filter(x => Number(x.customer_id) === Number(cust.id) && x.invoice_id == null && METHODS.includes(x.method) && x.method !== 'مؤخر')
+      .reduce((s, x) => s + Number(x.amount || 0), 0));
     return {
       data: {
         customer: { id: cust.id, name: cust.name },
@@ -958,7 +962,15 @@ const Sales = {
     const cust = md.customers.find(x => x.id === Number(customer_id));
     if (!cust) err('الزبون غير موجود', 404);
     const conf = o => o.status === 'مؤكدة';
-    const retValOf = rt => r2((rt.lines || []).reduce((s, l) => s + Number(l.qty || 0) * Number(l.price || 0), 0));
+    // هامش المرتجع المفقود = الكمية × (السعر − تكلفة اللقطة) — المرتجع يعاد للمخزون بتكلفته فلا تُخصم كلها
+    const retMarginOf = rt => {
+      const o = myInvs.find(x => x.id === Number(rt.invoice_id));
+      return r2((rt.lines || []).reduce((s, l) => {
+        const ol = o ? (o.lines || []).find(y => Number(y.item_id) === Number(l.item_id)) : null;
+        const unitMargin = ol ? r2(Number(ol.price || 0) - Number(ol.cost_snapshot || 0)) : Number(l.price || 0);
+        return s + Number(l.qty || 0) * unitMargin;
+      }, 0));
+    };
     // آخر طلبية (أي حالة) وآخر فاتورة مؤكدة
     const myCmds = (d.cmdorders || []).filter(x => Number(x.customer_id) === cust.id)
       .sort((a, b) => (String(a.date || '') < String(b.date || '') ? -1 : 1));
@@ -980,16 +992,17 @@ const Sales = {
       }
     }
     const fav = Object.values(pm).sort((a, b) => b.revenue - a.revenue)[0] || null;
-    // المرتجعات (عدد/قيمة بسعر البيع) تُخصم من الربح
+    // المرتجعات (عدد/هامش مفقود) تُخصم من الربح
     const myRets = (d.returns || []).filter(x => Number(x.customer_id) === cust.id);
-    const retVal = r2(myRets.reduce((s, rt) => s + retValOf(rt), 0));
+    const retVal = r2(myRets.reduce((s, rt) => s + retMarginOf(rt), 0));
     profit = r2(profit - retVal);
-    // الدين الحي: افتتاحي + مفوتر مؤكد − محصل نقداً − مرتجعات
+    // الدين الحي: افتتاحي + مفوتر مؤكد − محصل نقداً − مرتجعات (بسعر البيع الكامل للدين)
     const isCash = m => METHODS.includes(m) && m !== 'مؤخر';
     const paid = r2((d.receipts || [])
       .filter(x => Number(x.customer_id) === cust.id && isCash(x.method))
       .reduce((s, x) => s + Number(x.amount || 0), 0));
-    const debt = r2(toNum(cust.opening_debt, 'الدين الافتتاحي') + invTotal - paid - retVal);
+    const retGross = r2(myRets.reduce((s, rt) => s + (rt.lines || []).reduce((a, l) => a + Number(l.qty || 0) * Number(l.price || 0), 0), 0));
+    const debt = r2(toNum(cust.opening_debt, 'الدين الافتتاحي') + invTotal - paid - retGross);
     // الخمول (المرحلة 2): آخر نشاط (مؤكدة أو طلبية) + مهلة البطاقة + الحالة
     let lastAct = '';
     for (const o of myInvs) { const ds = String(o.date || ''); if (ds && (!lastAct || ds > lastAct)) lastAct = ds; }
@@ -1013,7 +1026,7 @@ const Sales = {
         lastInvoice: lastInv ? { num: lastInv.num, date: lastInv.date || '', total: r2(Number(lastInv.total || 0)) } : null,
         sales: { count: invCount, total: invTotal },
         favProduct: fav,
-        returns: { count: myRets.length, value: retVal },
+        returns: { count: myRets.length, value: retGross },
         debt, profit,
         inactivity: { days: idleDays, limit: idleLim, status: idleStatus, last: lastAct },
         generated_at: new Date().toISOString().slice(0, 16).replace('T', ' ')
@@ -1181,6 +1194,19 @@ const Sales = {
       pm[l.item_id].prevRevenue = r2(pm[l.item_id].prevRevenue + Number(l.qty || 0) * Number(l.price || 0));
       pm[l.item_id].prevCost = r2(pm[l.item_id].prevCost + Number(l.qty || 0) * Number(l.cost_snapshot || 0));
     }
+    // مرتجعات الفترة السابقة تُخصم منها أيضاً — وإلا قورن الصافي بالإجمالي
+    for (const rt of d.returns || []) {
+      if (!inP(String(rt.date || '').slice(0, 10))) continue;
+      const inv = (d.invoices || []).find(x => x.id === rt.invoice_id);
+      if (!inv || inv.status !== 'مؤكدة') continue;
+      for (const l of rt.lines || []) {
+        const ol = (inv.lines || []).find(x => x.item_id === l.item_id);
+        const pr = Number(ol ? ol.price : 0), cc = Number(ol && ol.cost_snapshot != null ? ol.cost_snapshot : 0);
+        pm[l.item_id] = pm[l.item_id] || { item_id: l.item_id, name: l.item_name, unit: l.unit || '', qty: 0, revenue: 0, cost: 0, prevRevenue: 0, prevCost: 0 };
+        pm[l.item_id].prevRevenue = r2(pm[l.item_id].prevRevenue - Number(l.qty || 0) * pr);
+        pm[l.item_id].prevCost = r2(pm[l.item_id].prevCost - Number(l.qty || 0) * cc);
+      }
+    }
     const products = Object.values(pm).map(p => {
       const profit = r2(p.revenue - p.cost);
       return {
@@ -1260,6 +1286,13 @@ const Sales = {
         if (!(amt > 0) || !inR(String(x.date || '').slice(0, 10))) continue;
         const e = centry(x.customer_id, x.customer_name);
         e.collected = r2(e.collected + amt);
+      }
+      // المستقلة (بلا فاتورة) تنقص الدين — كالمالية وكشف الحساب
+      for (const x of d.receipts || []) {
+        if (x.invoice_id != null) continue;
+        if (!METHODS.includes(x.method) || x.method === 'مؤخر') continue;
+        const e = centry(x.customer_id, x.customer_name);
+        e.debt = r2(e.debt - Number(x.amount || 0));
       }
       for (const [cid, e] of Object.entries(byCust)) {
         if (!(e.debt > 0) && !(e.collected > 0) && !(e.overdue > 0)) continue;

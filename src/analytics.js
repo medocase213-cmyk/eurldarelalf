@@ -433,6 +433,18 @@ const Analytics = {
         pm[l.item_id].cost = r2(pm[l.item_id].cost + Number(l.qty || 0) * Number(l.cost_snapshot || 0));
       }
     }
+    // مرتجعات الشهر تُخصم من المنتج (إيراداً وتكلفة) — كالمالية
+    for (const rt of (sd.returns || [])) {
+      if (!String(rt.date || '').startsWith(t)) continue;
+      const inv = (sd.invoices || []).find(x => x.id === Number(rt.invoice_id));
+      if (!inv || inv.status !== 'مؤكدة') continue;
+      for (const l of rt.lines || []) {
+        const ol = (inv.lines || []).find(x => Number(x.item_id) === Number(l.item_id));
+        if (!pm[l.item_id]) pm[l.item_id] = { name: l.item_name, revenue: 0, cost: 0 };
+        pm[l.item_id].revenue = r2(pm[l.item_id].revenue - Number(l.qty || 0) * Number(ol ? ol.price : 0));
+        pm[l.item_id].cost = r2(pm[l.item_id].cost - Number(l.qty || 0) * Number(ol && ol.cost_snapshot != null ? ol.cost_snapshot : 0));
+      }
+    }
     const negs = Object.values(pm)
       .map(p => ({ ...p, profit: r2(p.revenue - p.cost), margin: p.revenue > 0 ? Math.round((p.revenue - p.cost) / p.revenue * 1000) / 10 : 0 }))
       .filter(p => p.profit < 0).sort((a, b) => a.profit - b.profit);

@@ -206,7 +206,15 @@ const Dash = {
     let salesOverdue = 0;
     for (const o of sd.invoices || []) {
       if (o.status !== 'مؤكدة') continue;
-      const rem = r2(Number(o.total || 0) - (paidByInv[o.id] || 0));
+      let retVal = 0;
+      for (const rt of (sd.returns || [])) {
+        if (Number(rt.invoice_id) !== Number(o.id)) continue;
+        for (const l of rt.lines || []) {
+          const ol = (o.lines || []).find(y => Number(y.item_id) === Number(l.item_id));
+          retVal = r2(retVal + Number(l.qty || 0) * Number(ol ? ol.price : 0));
+        }
+      }
+      const rem = r2(Number(o.total || 0) - (paidByInv[o.id] || 0) - retVal);
       if (rem > 0 && ageDays(o.date, t) !== null && ageDays(o.date, t) > OVERDUE_DAYS) salesOverdue++;
     }
     // المخزون: تحت الحد + قريبة الانتهاء + القيمة (من balance واللوتات)

@@ -69,7 +69,7 @@ function send(res, code, obj) {
   res.writeHead(code, h);
   res.end(JSON.stringify(obj));
 }
-const MAX_BODY = Number(process.env.MAX_BODY_BYTES || 1048576); // P4: حد 1MB ضد إغراق الذاكرة
+const MAX_BODY = Number(process.env.MAX_BODY_BYTES || 8388608); // حد 8MB: اللقطات الكاملة تحمل صور base64 — الاستعادة للمدير فقط
 function body(req) {
   return new Promise((resolve, reject) => {
     let d = '';
@@ -80,7 +80,7 @@ function body(req) {
       if (d.length > MAX_BODY) {
         tooBig = true;
         try { req.destroy(); } catch {}
-        reject(Object.assign(new Error('حجم الطلب يتجاوز الحد المسموح (1MB)'), { code: 413 }));
+        reject(Object.assign(new Error('حجم الطلب يتجاوز الحد المسموح (8MB)'), { code: 413 }));
       }
     });
     req.on('end', () => { if (!tooBig) { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } } });
@@ -168,6 +168,7 @@ const WRITE_PERM = [
   W(/^\/api\/system\/(config|changelog)/, 'system', 'config'),
   W(/^\/api\/users(\/|$)/, 'users', 'manage'),
   W(/^\/api\/roles(\/|$)/, 'users', 'manage'),
+  W(/^\/api\/master\/expcats(\/|$)/, 'finance', 'expense'),
   W(/^\/api\/master\/categories(\/|$)/, 'master', 'item'),
   W(/^\/api\/master\/items(\/|$)/, 'master', 'item'),
   W(/^\/api\/master\/formulas-ref(\/|$)/, 'master', 'item'),
