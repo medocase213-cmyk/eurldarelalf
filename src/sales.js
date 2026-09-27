@@ -232,6 +232,8 @@ const Sales = {
     const o = d.invoices.find(x => x.id === Number(id));
     if (!o) err('الفاتورة غير موجودة', 404);
     if (o.status !== 'مسودة') err('التعديل في مسودة فقط — المؤكدة تُصحح بالمرتجع');
+    // حماية التزامن: رفض الكتابة فوق نسخة تغيرت (مستخدم آخر عدّلها أثناء التحرير)
+    if (b.updated_at !== undefined && String(b.updated_at || '') !== String(o.updated_at || '')) err('الفاتورة تغيرت على الخادم (تعديل من مستخدم آخر) — حدّث الصفحة وأعد التعديل', 409);
     this._mine(o, ctx, 'الفاتورة');
     const md = mdata();
     if (b.customer_id !== undefined) {
@@ -509,23 +511,23 @@ const Sales = {
     });
   },
   publicCatalog() {    const md = mdata();
-    const finIds = new Set((md.items || []).filter(it => {
+    const fin = (md.items || []).filter(it => {
       const c = (md.categories || []).find(x => x.id === Number(it.category_id));
       return c && c.main === 'منتج نهائي' && it.status !== 'متوقفة';
-    }).map(it => it.id));
+    });
     let avail = {};
     try {
       for (const a of this.availability().data) avail[Number(a.item_id)] = a;
     } catch {}
     const out = [];
-    for (const id of finIds) {
-      const a = avail[id];
+    for (const it of fin) {
+      const a = avail[it.id];
       if (!a || !(Number(a.remaining || 0) > 0)) continue;
-      const it = (md.items || []).find(x => x.id === id) || {};
+      const c = (md.categories || []).find(x => x.id === Number(it.category_id)) || {};
       out.push({
-        item_id: id, item_name: a.item_name, unit: a.unit || it.unit || 'قنطار',
-        remaining: Number(a.remaining || 0), price: this._lastSalePrice(id),
-        image: it.image || ''
+        item_id: it.id, item_name: a.item_name, unit: a.unit || it.unit || 'قنطار',
+        remaining: Number(a.remaining || 0), price: this._lastSalePrice(it.id),
+        image: it.image || '', section: c.sub || ''
       });
     }
     return { data: out.sort((x, y) => String(x.item_name) < String(y.item_name) ? -1 : 1) };
