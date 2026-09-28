@@ -326,7 +326,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== 'GET' && p.startsWith('/api/')) __unlock = await lockWrite();
     guardMutation(req, p);
     checkRoutePerm(p, req.method, ctx0);
-    if (p === '/api/health' && req.method === 'GET') return send(res, 200, { ok: true, project: 'dar-alef-v2', version: '2.2-p4', uptime: Math.round(process.uptime()), time: new Date().toISOString() });
+    if (p === '/api/health' && req.method === 'GET') { let mg = false; try { mg = require('./src/mongosync').ready; } catch {} return send(res, 200, { ok: true, project: 'dar-alef-v2', version: '2.2-p4', uptime: Math.round(process.uptime()), time: new Date().toISOString(), mongo: mg }); }
 
     if (p === '/api/login' && req.method === 'POST') {
       // حد المعدل: 20 محاولة/دقيقة لكل IP (ذاكرة فقط — يمنع الإغراق قبل لمس القرص)
@@ -734,4 +734,8 @@ Master.deleteJob(numId(p, '/api/master/jobs/'), ctx));
   }
 });
 
-server.listen(PORT, () => console.log('Dar Al-Alef V2 on http://localhost:' + PORT));
+(async () => {
+  try { await require('./src/mongosync').init(); }
+  catch (e) { console.log('mongo sync off: ' + (e && e.message)); }
+  server.listen(PORT, () => console.log('Dar Al-Alef V2 on http://localhost:' + PORT));
+})();

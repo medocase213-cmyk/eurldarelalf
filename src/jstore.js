@@ -3,10 +3,12 @@
 // يمس القرص خارج طلبات /api يجب أن يحترم نفس القاعدة (تسلسل كامل للمقطع load→save).
 const fs = require('node:fs');
 const path = require('node:path');
+const Sync = require('./mongosync');
 
 function jstore(file, empty) {
   const F = path.join(__dirname, '..', 'data', file);
   const clone = () => JSON.parse(JSON.stringify(empty));
+  try { Sync.note(F, empty); } catch {}
   return {
     file: F,
     load() {
@@ -24,6 +26,7 @@ function jstore(file, empty) {
       const tmp = F + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify(d, null, 2), 'utf8');
       fs.renameSync(tmp, F);
+      try { Sync.queuePush(F); } catch {}
     }
   };
 }
