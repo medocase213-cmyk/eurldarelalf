@@ -22,6 +22,7 @@ const Notif = require('./src/notifications');
 const Auth = require('./src/auth');
 const Reset = require('./src/reset');
 const Billing = require('./src/billing');
+const MongoSync = require('./src/mongosync');
 
 const PORT = process.env.PORT || 3001;
 const FRONT = path.join(__dirname, '..', 'frontend');
@@ -164,7 +165,7 @@ const READ_PERM = [
 const WRITE_PERM = [
   // (الترتيب مهم: الأنماط الأكثر تحديداً أولاً)
   W(/^\/api\/system\/design-(backups|restore)$/, 'system', 'backup'),
-  W(/^\/api\/system\/(data-backup|data-restore|archives|backup-catalog|snapshots|snapshot-(restore|delete|file)|reset-(sales|procurement))$/, 'system', 'backup'),
+  W(/^\/api\/system\/(data-backup|data-restore|archives|backup-catalog|snapshots|snapshot-(restore|delete|file)|reset-(sales|procurement|trial)|cloud-(push|restore))$/, 'system', 'backup'),
   W(/^\/api\/system\/(config|changelog)/, 'system', 'config'),
   W(/^\/api\/users(\/|$)/, 'users', 'manage'),
   W(/^\/api\/roles(\/|$)/, 'users', 'manage'),
@@ -664,7 +665,7 @@ Master.deleteJob(numId(p, '/api/master/jobs/'), ctx));
       catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
     }
     if (p === '/api/system/data-restore' && req.method === 'POST') {
-      try { return send(res, 200, System.dataRestore(await body(req), getCtx(req))); }
+      try { const out = System.dataRestore(await body(req), getCtx(req)); try { MongoSync.setCooldown(30); } catch {} return send(res, 200, out); }
       catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
     }
     // لقطات الخادم: حفظ مسمى + قائمة + استعادة + تنزيل + حذف
@@ -677,7 +678,7 @@ Master.deleteJob(numId(p, '/api/master/jobs/'), ctx));
       catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
     }
     if (p === '/api/system/snapshot-restore' && req.method === 'POST') {
-      try { return send(res, 200, System.snapRestore(await body(req), getCtx(req))); }
+      try { const out = System.snapRestore(await body(req), getCtx(req)); try { MongoSync.setCooldown(30); } catch {} return send(res, 200, out); }
       catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
     }
     if (p === '/api/system/snapshot-delete' && req.method === 'POST') {
@@ -688,13 +689,40 @@ Master.deleteJob(numId(p, '/api/master/jobs/'), ctx));
       try { return send(res, 200, System.snapGet({ id: url.searchParams.get('id') }, getCtx(req))); }
       catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
     }
-    // أزرار التصفير المؤقتة — للمدير العام فقط (فحص مزدوج: بوابة backup + داخل الدالة)
+    // ---- السحابة الآمنة: حالة + معاينة + دفع فوري + استعادة محمية من الفراغ ----
+    if (p === '/api/system/sync-status' && req.method === 'GET') {
+      try { return send(res, 200, { data: MongoSync.status() }); }
+      catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
+    }
+    if (p === '/api/system/cloud-preview' && req.method === 'GET') {
+      try { return send(res, 200, { data: await MongoSync.preview() }); }
+      catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
+    }
+    if (p === '/api/system/cloud-push' && req.method === 'POST') {
+      try { return send(res, 200, { data: await MongoSync.pushAllChanged() }); }
+      catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
+    }
+    if (p === '/api/system/cloud-restore' && req.method === 'POST') {
+      try {
+        const b = await body(req);
+        if (String((b || {}).confirm || '') !== 'RESTORE') throw Object.assign(new Error('اكتب RESTORE للتأكيد'), { code: 400 });
+        const out = await MongoSync.safeRestore(getCtx(req));
+        try { MongoSync.setCooldown(30); } catch {}
+        return send(res, 200, { data: out });
+      } catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
+    }
+    // أزرار التصفير — للمدير العام فقط (فحص مزدوج: بوابة backup + داخل الدالة)
+    // كل تصفير مقصود يجمّد الاسترجاع التلقائي 30 دقيقة حتى لا يعيد ما مسحته بيدك
     if (p === '/api/system/reset-sales' && req.method === 'POST') {
-      try { return send(res, 200, Reset.sales(await body(req), getCtx(req))); }
+      try { const out = Reset.sales(await body(req), getCtx(req)); try { MongoSync.setCooldown(30); } catch {} return send(res, 200, out); }
       catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
     }
     if (p === '/api/system/reset-procurement' && req.method === 'POST') {
-      try { return send(res, 200, Reset.procurement(await body(req), getCtx(req))); }
+      try { const out = Reset.procurement(await body(req), getCtx(req)); try { MongoSync.setCooldown(30); } catch {} return send(res, 200, out); }
+      catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
+    }
+    if (p === '/api/system/reset-trial' && req.method === 'POST') {
+      try { const out = Reset.trial(await body(req), getCtx(req)); try { MongoSync.setCooldown(30); } catch {} return send(res, 200, out); }
       catch (e) { return send(res, (e && e.code) || 500, { error: (e && e.message) || 'خطأ داخلي' }); }
     }
 

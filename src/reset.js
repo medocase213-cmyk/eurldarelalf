@@ -16,7 +16,7 @@ function needAdmin(ctx) {
 function safetyCopy(tag) {
   const AD = path.join(__dirname, '..', 'data-archive', 'manual-pre-' + tag + '-' + now().replace(/[:.]/g, '-').slice(0, 19));
   fs.mkdirSync(AD, { recursive: true });
-  for (const f of ['sales.json', 'billing.json', 'procurement.json', 'inventory.json', 'finance.json', 'master.json']) {
+  for (const f of ['sales.json', 'billing.json', 'procurement.json', 'production.json', 'inventory.json', 'finance.json', 'master.json', 'system.json', 'users.json', 'employees.json']) {
     const fp = path.join(__dirname, '..', 'data', f);
     if (fs.existsSync(fp)) fs.copyFileSync(fp, path.join(AD, f));
   }
@@ -86,6 +86,26 @@ const Reset = {
     jstore('finance.json', {}).save(fin);
     mstore.save(md);
     return { data: { safety, invoices: cInv, receipts: cRec, returns: cRet, movs_reversed: reversed, return_lots_removed: retLots.length, return_movs_removed: delMov, receivables_removed: cRecv } };
+  },
+
+  trial(b, ctx) {
+    needAdmin(ctx);
+    if (String((b || {}).confirm || '') !== 'RESET-TRIAL') err('اكتب RESET-TRIAL للتأكيد');
+    // الترتيب إجباري: المبيعات أولا (تعكس المخزون) ثم التوريدات (تمسح الإنتاج ضمنا)
+    const r1 = this.sales({ confirm: 'RESET-SALES' }, ctx);
+    const r2p = this.procurement({ confirm: 'RESET-PROCUREMENT' }, ctx);
+    // مسح طلبيات الزبائن الداخلية والخارجية (بلا أثر مخزني — للتجربة فقط)
+    try {
+      const sd = jstore('sales.json', {}).load();
+      const cCmd = (sd.cmdorders || []).length;
+      const cExt = (sd.extorders || []).length;
+      sd.cmdorders = [];
+      sd.extorders = [];
+      jstore('sales.json', {}).save(sd);
+      return { data: { safety: [r1.data.safety, r2p.data.safety], sales: r1.data, procurement: r2p.data, cmdorders: cCmd, extorders: cExt, kept: 'البيانات الأساسية (3) محفوظة' } };
+    } catch (e) {
+      return { data: { safety: [r1.data.safety, r2p.data.safety], sales: r1.data, procurement: r2p.data, kept: 'البيانات الأساسية (3) محفوظة' } };
+    }
   },
 
   procurement(b, ctx) {
